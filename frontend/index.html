@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>ISTO Assistant — Meridian State University (Demo)</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>ISTO Assistant — Meridian State University</h1>
+    <p>Fictional demo · International Students &amp; Scholars Office</p>
+  </header>
+
+  <main>
+    <div id="error-banner" class="hidden"></div>
+
+    <section id="login-panel">
+      <label for="user-select">Sign in as</label>
+      <select id="user-select">
+        <option value="usera">Test User A (clean case)</option>
+        <option value="userb">Test User B (needs-attention case)</option>
+      </select>
+
+      <label for="password-input">Password</label>
+      <input id="password-input" type="password" placeholder="See CloudFormation parameters" />
+
+      <div style="margin-top: 16px">
+        <button id="login-btn">Sign in</button>
+      </div>
+    </section>
+
+    <section id="chat-panel" class="hidden">
+      <div id="session-bar">
+        <span id="session-label"></span>
+        <button id="logout-btn">Sign out</button>
+      </div>
+      <div id="chat-window"></div>
+      <form id="composer">
+        <input id="message-input" type="text" placeholder="Ask ISTO a question…" autocomplete="off" />
+        <button type="submit">Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
