@@ -1,15 +1,17 @@
 """
 Combined guardrail + orchestrator Lambda for the ISTO Personalized Guidance
-demo. One function, several logical stages (see README for the stage
-breakdown if asked live):
+demo. FALLBACK BRANCH: calls OpenAI's Platform API directly (openai_client.py)
+instead of through Bedrock bedrock-runtime — see openai_client.py's
+docstring for why and what's traded off (no Bedrock Guardrails layer). One
+function, several logical stages (see README for the stage breakdown if
+asked live):
 
   1. Resolve the caller's identity from the verified Cognito JWT (never from
      the request body).
   2. Deterministic injection heuristic (guardrails.py) — fast refusal path.
   3. RAG: embed the message, retrieve policy chunks (kb_retrieval.py).
-  4. Call the model via Bedrock Converse (bedrock_client.py), with Bedrock
-     Guardrails attached and the get_student_record / check_travel_eligibility
-     tools available.
+  4. Call the model (openai_client.py) with the get_student_record /
+     check_travel_eligibility tools available.
   5. If the model calls a tool, execute it scoped to the authenticated
      caller only (tools.py), evaluate deterministic escalation rules
      (escalation.py), and call the model again for the final answer.
@@ -18,9 +20,9 @@ breakdown if asked live):
 import json
 import logging
 
-import bedrock_client
 import escalation
 import kb_retrieval
+import openai_client
 from guardrails import REFUSAL_MESSAGE, looks_like_injection
 from prompts import build_system_prompt
 from tools import TOOL_SPECS, execute_check_travel_eligibility, execute_get_student_record
@@ -80,7 +82,7 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
 
     messages = list(history) + [{"role": "user", "content": [{"text": message}]}]
 
-    response = bedrock_client.converse(messages, system_prompt, tools=TOOL_SPECS)
+    response = openai_client.converse(messages, system_prompt, tools=TOOL_SPECS)
     escalated = False
 
     # Tool-calling loop — bounded, since a single well-scoped tool can only
@@ -120,7 +122,7 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
             }
         )
 
-        response = bedrock_client.converse(messages, system_prompt, tools=TOOL_SPECS)
+        response = openai_client.converse(messages, system_prompt, tools=TOOL_SPECS)
 
     final_text = "".join(b.get("text", "") for b in response["output"]["message"]["content"])
     return final_text, escalated
