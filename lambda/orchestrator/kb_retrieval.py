@@ -1,8 +1,8 @@
 """
 RAG retrieval: embed the student's message with the OpenAI embeddings
 endpoint (the one OpenAI Platform/API surface this demo uses outside of
-Bedrock), then k-NN search it against the OpenSearch Serverless vector
-collection seeded by lambda/kb_seed.
+Bedrock), then k-NN search it against the OpenSearch (provisioned,
+single-node) index seeded by lambda/kb_seed.
 """
 import json
 import os
@@ -10,7 +10,7 @@ import urllib.request
 
 import boto3
 
-from aoss_http import signed_request
+from opensearch_http import signed_request
 
 _secrets = boto3.client("secretsmanager")
 _secret_cache: dict | None = None

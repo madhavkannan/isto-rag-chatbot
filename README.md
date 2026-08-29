@@ -9,15 +9,19 @@ this was built from); this README covers deploy/run/demo mechanics.
 through Amazon Bedrock `bedrock-runtime` (Converse API) to an
 OpenAI-compatible model; embeddings for the policy knowledge base call the
 OpenAI Platform API's embeddings endpoint directly. Everything else (Cognito,
-DynamoDB, OpenSearch Serverless, Lambda, API Gateway, Secrets Manager,
+DynamoDB, OpenSearch Service, Lambda, API Gateway, Secrets Manager,
 Bedrock Guardrails, CloudWatch) is supporting AWS infrastructure.
 
-## Cost warning
+## Cost note
 
-**OpenSearch Serverless bills a minimum OCU-hour rate even at idle**
-(indexing + search capacity units, roughly on the order of several hundred
-USD/month if left running continuously). This is fine for a short-lived demo
-stack but **delete the stack when you're done recording**:
+The knowledge base runs on a **provisioned, single-node OpenSearch Service
+domain** (`t3.small.search`), not OpenSearch Serverless — a deliberate
+swap: this stack is typically built days ahead of the demo and left running
+idle in between, and Serverless bills a minimum OCU-hour floor around the
+clock regardless of use, while a small on-demand instance is billed per
+hour at one of AWS's cheapest search instance rates. Still **delete the
+stack once you're done recording**, since it's still a running instance +
+Cognito/API Gateway/etc, not something that scales to zero on its own:
 
 ```bash
 sam delete --stack-name isto-demo
@@ -56,13 +60,14 @@ Deployment stands up, in one `sam deploy`:
   password, hence the small Lambda-backed custom resource).
 - DynamoDB table, pre-seeded with the two test student records by the same
   bootstrap custom resource.
-- OpenSearch Serverless vector collection (encryption + network + data
-  access policies), with its k-NN index created and the three synthetic
-  ISTO policy documents embedded and loaded by a second custom resource.
+- A single-node OpenSearch Service domain (encrypted at rest, HTTPS-only,
+  IAM-authenticated data plane), with its k-NN index created and the three
+  synthetic ISTO policy documents embedded and loaded by a second custom
+  resource.
 - The combined guardrail/orchestrator Lambda, least-privilege IAM role
   (DynamoDB read on one table, Bedrock invoke+guardrail on one model/one
-  guardrail ARN, Secrets Manager read on one secret, OpenSearch Serverless
-  data access on one collection — nothing broader).
+  guardrail ARN, Secrets Manager read on one secret, OpenSearch data-plane
+  read on one domain — nothing broader).
 - API Gateway (HTTP API) with a Cognito JWT authorizer in front of the
   Lambda.
 - Secrets Manager entry holding the OpenAI API key.
@@ -70,6 +75,10 @@ Deployment stands up, in one `sam deploy`:
   masking) attached to every Converse call.
 - CloudWatch log groups for both the orchestrator and the two bootstrap
   Lambdas.
+
+The OpenSearch domain itself typically takes 15-20 minutes to come up
+(`sam deploy` will just look like it's hanging on that resource — this is
+normal for provisioned OpenSearch Service, not a stuck deploy).
 
 Note the stack outputs (`ApiUrl`, `UserPoolClientId`, `Region`) — the
 frontend needs them.

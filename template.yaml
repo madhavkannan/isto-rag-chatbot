@@ -2,10 +2,10 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   ISTO Personalized Guidance demo (Meridian State University, fictional).
-  Cognito + DynamoDB + OpenSearch Serverless (vector KB) + a combined
-  guardrail/orchestrator Lambda behind API Gateway, calling an OpenAI model
-  through Amazon Bedrock bedrock-runtime (Converse API), with Bedrock
-  Guardrails attached. See README.md for the design rationale.
+  Cognito + DynamoDB + a single-node OpenSearch Service domain (vector KB)
+  + a combined guardrail/orchestrator Lambda behind API Gateway, calling an
+  OpenAI model through Amazon Bedrock bedrock-runtime (Converse API), with
+  Bedrock Guardrails attached. See README.md for the design rationale.
 
 Parameters:
   Stage:
@@ -115,42 +115,42 @@ Resources:
       SecretString: !Sub '{"OPENAI_API_KEY":"${OpenAIApiKey}"}'
 
   # ---------------------------------------------------------------------
-  # Knowledge base: OpenSearch Serverless (vector collection)
+  # Knowledge base: Amazon OpenSearch Service, single-node provisioned
+  # domain (not Serverless — swapped in deliberately: this stack is built
+  # days ahead of the demo and left running idle in between, and
+  # Serverless's OCU-hour minimum floor makes multi-day idle time cost far
+  # more than a single small on-demand instance billed by the hour).
   # ---------------------------------------------------------------------
-  KbEncryptionPolicy:
-    Type: AWS::OpenSearchServerless::SecurityPolicy
+  KbDomain:
+    Type: AWS::OpenSearchService::Domain
     Properties:
-      Name: !Sub isto-kb-enc-${Stage}
-      Type: encryption
-      Policy: !Sub '{"Rules":[{"ResourceType":"collection","Resource":["collection/isto-kb-${Stage}"]}],"AWSOwnedKey":true}'
-
-  KbNetworkPolicy:
-    Type: AWS::OpenSearchServerless::SecurityPolicy
-    Properties:
-      Name: !Sub isto-kb-net-${Stage}
-      Type: network
-      Policy: !Sub '[{"Rules":[{"ResourceType":"collection","Resource":["collection/isto-kb-${Stage}"]}],"AllowFromPublic":true}]'
-
-  KbCollection:
-    Type: AWS::OpenSearchServerless::Collection
-    DependsOn:
-      - KbEncryptionPolicy
-      - KbNetworkPolicy
-    Properties:
-      Name: !Sub isto-kb-${Stage}
-      Type: VECTORSEARCH
-      Description: ISTO synthetic policy documents (endorsement re-issuance, work-hour cap, minimum course load).
-
-  KbDataAccessPolicy:
-    Type: AWS::OpenSearchServerless::AccessPolicy
-    DependsOn: KbCollection
-    Properties:
-      Name: !Sub isto-kb-access-${Stage}
-      Type: data
-      Policy: !Sub
-        - '[{"Rules":[{"ResourceType":"collection","Resource":["collection/isto-kb-${Stage}"],"Permission":["aoss:CreateCollectionItems","aoss:DescribeCollectionItems","aoss:UpdateCollectionItems"]},{"ResourceType":"index","Resource":["index/isto-kb-${Stage}/*"],"Permission":["aoss:CreateIndex","aoss:DescribeIndex","aoss:ReadDocument","aoss:WriteDocument","aoss:UpdateIndex","aoss:DeleteIndex"]}],"Principal":["${OrchestratorRoleArn}","${KbSeedRoleArn}"]}]'
-        - OrchestratorRoleArn: !GetAtt OrchestratorFunctionRole.Arn
-          KbSeedRoleArn: !GetAtt KbSeedFunctionRole.Arn
+      DomainName: !Sub isto-kb-${Stage}
+      EngineVersion: OpenSearch_2.11
+      ClusterConfig:
+        InstanceType: t3.small.search
+        InstanceCount: 1
+        DedicatedMasterEnabled: false
+        ZoneAwarenessEnabled: false
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: gp3
+        VolumeSize: 10
+      EncryptionAtRestOptions:
+        Enabled: true
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      DomainEndpointOptions:
+        EnforceHTTPS: true
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt OrchestratorFunctionRole.Arn
+                - !GetAtt KbSeedFunctionRole.Arn
+            Action: es:ESHttp*
+            Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
 
   # ---------------------------------------------------------------------
   # Bedrock Guardrails
@@ -261,7 +261,7 @@ Resources:
           EMBEDDING_MODEL: !Ref OpenAIEmbeddingModel
           GUARDRAIL_ID: !GetAtt Guardrail.GuardrailId
           GUARDRAIL_VERSION: !GetAtt GuardrailVersion.Version
-          OPENSEARCH_ENDPOINT: !GetAtt KbCollection.CollectionEndpoint
+          OPENSEARCH_ENDPOINT: !Sub https://${KbDomain.DomainEndpoint}
           KB_INDEX_NAME: !Sub isto-kb-${Stage}
       Policies:
         - DynamoDBReadPolicy:
@@ -286,8 +286,10 @@ Resources:
             - Sid: QueryKnowledgeBase
               Effect: Allow
               Action:
-                - aoss:APIAccessAll
-              Resource: !GetAtt KbCollection.Arn
+                - es:ESHttpGet
+                - es:ESHttpPost
+                - es:ESHttpHead
+              Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
       Events:
         ChatApi:
           Type: HttpApi
@@ -367,7 +369,7 @@ Resources:
         Variables:
           SECRET_ARN: !Ref OpenAICredentialsSecret
           EMBEDDING_MODEL: !Ref OpenAIEmbeddingModel
-          OPENSEARCH_ENDPOINT: !GetAtt KbCollection.CollectionEndpoint
+          OPENSEARCH_ENDPOINT: !Sub https://${KbDomain.DomainEndpoint}
           KB_INDEX_NAME: !Sub isto-kb-${Stage}
       Policies:
         - Statement:
@@ -379,15 +381,17 @@ Resources:
             - Sid: WriteKnowledgeBase
               Effect: Allow
               Action:
-                - aoss:APIAccessAll
-              Resource: !GetAtt KbCollection.Arn
+                - es:ESHttpGet
+                - es:ESHttpPut
+                - es:ESHttpPost
+                - es:ESHttpHead
+              Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
 
   KbSeedCustomResource:
     Type: Custom::IstoDemoKbSeed
-    DependsOn: KbDataAccessPolicy
     Properties:
       ServiceToken: !GetAtt KbSeedFunction.Arn
-      CollectionEndpoint: !GetAtt KbCollection.CollectionEndpoint
+      CollectionEndpoint: !Sub https://${KbDomain.DomainEndpoint}
       IndexName: !Sub isto-kb-${Stage}
 
 Outputs:

@@ -1,10 +1,10 @@
 """
 CloudFormation custom resource: creates the k-NN vector index on the
-OpenSearch Serverless collection and loads the synthetic ISTO policy
-documents into it, embedding each chunk with the OpenAI embeddings endpoint.
+OpenSearch domain and loads the synthetic ISTO policy documents into it,
+embedding each chunk with the OpenAI embeddings endpoint.
 
-Deletion is a no-op — this is a throwaway demo collection, torn down with
-the rest of the stack; there's nothing else worth unwinding first.
+Deletion is a no-op — this is a throwaway demo domain, torn down with the
+rest of the stack; there's nothing else worth unwinding first.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import urllib.request
 
 import boto3
 
-from aoss_http import signed_request
+from opensearch_http import signed_request
 from policy_docs import POLICY_CHUNKS
 
 EMBEDDING_MODEL = os.environ["EMBEDDING_MODEL"]
@@ -44,7 +44,10 @@ def _ensure_index(endpoint: str, index_name: str) -> None:
                 "embedding": {
                     "type": "knn_vector",
                     "dimension": EMBEDDING_DIMENSION,
-                    "method": {"name": "hnsw", "engine": "faiss", "space_type": "l2"},
+                    # nmslib: the original k-NN engine, supported on every
+                    # OpenSearch version — one less compatibility variable
+                    # to debug against a hard demo deadline.
+                    "method": {"name": "hnsw", "engine": "nmslib", "space_type": "l2"},
                 },
                 "text": {"type": "text"},
                 "doc": {"type": "keyword"},
