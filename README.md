@@ -108,8 +108,8 @@ Four defense layers, in `lambda/orchestrator/guardrails.py` (heuristic
 pre-filter), the Bedrock Guardrail's `PROMPT_ATTACK` filter and
 `OtherStudentData` denied topic, the system prompt
 (`lambda/orchestrator/prompts.py`), and — the one that actually matters —
-`get_student_record`'s tool schema (`lambda/orchestrator/tools.py`), which
-has no student-id parameter at all. The Lambda always resolves the caller's
+both tools' schemas (`lambda/orchestrator/tools.py`), neither of which has a
+student-id parameter at all. The Lambda always resolves the caller's
 id from the verified Cognito JWT (`_resolve_student_id` in
 `lambda/orchestrator/app.py`); there is no code path by which model output
 or user text could route another student's data back to this session. Talk

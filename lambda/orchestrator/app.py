@@ -8,8 +8,9 @@ breakdown if asked live):
   2. Deterministic injection heuristic (guardrails.py) — fast refusal path.
   3. RAG: embed the message, retrieve policy chunks (kb_retrieval.py).
   4. Call the model via Bedrock Converse (bedrock_client.py), with Bedrock
-     Guardrails attached and the get_student_record tool available.
-  5. If the model calls the tool, execute it scoped to the authenticated
+     Guardrails attached and the get_student_record / check_travel_eligibility
+     tools available.
+  5. If the model calls a tool, execute it scoped to the authenticated
      caller only (tools.py), evaluate deterministic escalation rules
      (escalation.py), and call the model again for the final answer.
   6. Log the exchange (CloudWatch) and return {reply, escalated}.
@@ -22,7 +23,7 @@ import escalation
 import kb_retrieval
 from guardrails import REFUSAL_MESSAGE, looks_like_injection
 from prompts import build_system_prompt
-from tools import TOOL_SPECS, execute_get_student_record
+from tools import TOOL_SPECS, execute_check_travel_eligibility, execute_get_student_record
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -62,8 +63,8 @@ def _resolve_student_id(event) -> str:
     The ONLY place a student id is ever established. Sourced from the
     Cognito-JWT claims that API Gateway's authorizer already verified —
     never from the request body or from anything the model outputs. This is
-    the Story 3 structural boundary: get_student_record (tools.py) accepts
-    no id parameter at all, so whatever this function returns is the only
+    the Story 3 structural boundary: neither tool (tools.py) accepts an id
+    parameter at all, so whatever this function returns is the only
     identity the rest of the request can ever act on.
     """
     try:
@@ -93,11 +94,8 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
             break
 
         tool_use = next(b["toolUse"] for b in assistant_message["content"] if "toolUse" in b)
-        record = execute_get_student_record(student_id, tool_use["input"])
-        evaluation = escalation.evaluate(record)
-
-        tool_result_content = {**record, **_evaluation_fields(evaluation)}
-        if evaluation.escalate:
+        tool_result_content = _execute_tool(student_id, tool_use["name"], tool_use["input"])
+        if tool_result_content.pop("_escalate", False):
             escalated = True
             tool_result_content["escalation_instruction"] = (
                 "This case MUST be escalated to ISTO — tell the student that "
@@ -128,11 +126,33 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
     return final_text, escalated
 
 
-def _evaluation_fields(evaluation: escalation.Evaluation) -> dict:
-    return {
-        "work_hours_remaining": evaluation.work_hours_remaining,
-        "course_load_meets_minimum": evaluation.course_load_meets_minimum,
-    }
+def _execute_tool(student_id: str, name: str, tool_input: dict) -> dict:
+    """
+    Runs one tool call and folds in its deterministic evaluation. Returns the
+    dict to send back to the model as the tool result, plus an internal
+    "_escalate" key (popped by the caller, never sent to the model as a
+    field for it to act on) — the escalation decision itself is made here in
+    code, not reported by or delegated to the model.
+    """
+    if name == "get_student_record":
+        record = execute_get_student_record(student_id, tool_input)
+        summary = escalation.summarize_record(record)
+        return {
+            **record,
+            "work_hours_remaining": summary.work_hours_remaining,
+            "course_load_meets_minimum": summary.course_load_meets_minimum,
+        }
+
+    if name == "check_travel_eligibility":
+        record = execute_check_travel_eligibility(student_id, tool_input)
+        evaluation = escalation.evaluate_travel(record)
+        return {
+            **record,
+            "course_load_meets_minimum": evaluation.course_load_meets_minimum,
+            "_escalate": evaluation.escalate,
+        }
+
+    raise ValueError(f"unknown tool: {name}")
 
 
 def _response(status: int, body: dict) -> dict:
