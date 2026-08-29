@@ -15,12 +15,15 @@ Parameters:
 
   BedrockModelId:
     Type: String
-    Default: openai.gpt-5.6-sol-v1:0
+    Default: openai.gpt-5.6-sol
     Description: >
       Bedrock bedrock-runtime model id for the OpenAI-compatible model used
-      via the Converse API. Placeholder per the design doc ("GPT-5.6 Sol") —
-      replace with whatever model id your Bedrock account actually has
-      access to before deploying.
+      via the Converse API — confirmed against `aws bedrock
+      list-foundation-models`, matching the design doc's "GPT-5.6 Sol"
+      reference. Re-check this is still current for your account before
+      deploying (model catalogs change), and note that being listed isn't
+      the same as being invokable — some accounts need Bedrock model
+      access explicitly enabled first (see README's Bedrock access note).
 
   OpenAIEmbeddingModel:
     Type: String

@@ -46,11 +46,33 @@ sam deploy --guided \
   --parameter-overrides OpenAIApiKey=sk-... BedrockModelId=<your bedrock-runtime model id>
 ```
 
-`BedrockModelId` defaults to a placeholder (`openai.gpt-5.6-sol-v1:0`) taken
-from the design brief — replace it with whatever model id your account
-actually has `bedrock-runtime` access to. `TestUserAPassword` /
-`TestUserBPassword` default to demo-only values (`MeridianDemo!2026A` /
-`...B`) and can be overridden the same way.
+`BedrockModelId` defaults to `openai.gpt-5.6-sol`, confirmed against `aws
+bedrock list-foundation-models` — re-check it's still current for your
+account before deploying. `TestUserAPassword` / `TestUserBPassword`
+default to demo-only values (`MeridianDemo!2026A` / `...B`) and can be
+overridden the same way.
+
+**Before deploying, confirm Bedrock will actually let you invoke a model**
+— being listed by `list-foundation-models` isn't the same as being
+authorized to call it. Some AWS accounts (commonly newer or lower-usage
+ones) get every Bedrock model call rejected with
+`ValidationException: Error 002: Access to Bedrock models is not allowed
+for this account`, regardless of IAM permissions. Test with:
+
+```bash
+aws bedrock-runtime converse --region us-east-1 --model-id openai.gpt-5.6-sol \
+  --messages '[{"role":"user","content":[{"text":"ok"}]}]'
+```
+
+If that fails with the same error on multiple unrelated models, it's an
+account-wide restriction, not a model-specific one — the fix is an AWS
+Support case (Support Center → Create case → **Account and billing
+support** → Service: Bedrock; free even on Basic support), and there's no
+guaranteed turnaround. If you're up against a deadline and that case
+hasn't cleared, use the `fallback-direct-openai` branch instead — it's
+functionally the same demo, calling the OpenAI Platform API directly for
+chat instead of through Bedrock (see that branch's README for the
+trade-off).
 
 Deployment stands up, in one `sam deploy`:
 
