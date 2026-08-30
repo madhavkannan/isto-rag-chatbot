@@ -10,18 +10,18 @@ asked live):
      the request body).
   2. Deterministic injection heuristic (guardrails.py) — fast refusal path.
   3. RAG: embed the message, retrieve policy chunks (kb_retrieval.py).
-  4. Call the model (openai_client.py) with the get_student_record /
-     check_travel_eligibility tools available.
+  4. Call the model (openai_client.py) with the Story 1 (travel) and
+     Story 2 (course drop / Medical RCL) tools available.
   5. If the model calls a tool, execute it scoped to the authenticated
      caller only (tools.py), evaluate deterministic escalation rules
      (escalation.py), and call the model again for the final answer.
   6. Log the exchange (CloudWatch) and return {reply, escalated, visual}.
 
 `visual` carries the structured numbers behind whichever tool the model
-called this turn (hours cap/logged/remaining, or trip/endorsement dates) so
-the frontend can render a real meter/timeline from actual data instead of
-parsing them back out of the model's prose. It's None when no tool was
-called this turn (e.g. the model is still asking for travel dates).
+called this turn (trip/endorsement dates, or course-drop credit impact) so
+the frontend can render a real chart from actual data instead of parsing
+them back out of the model's prose. It's None when no tool was called this
+turn (e.g. the model is still asking for travel dates).
 """
 import json
 import logging
@@ -34,9 +34,10 @@ from guardrails import REFUSAL_MESSAGE, looks_like_injection
 from prompts import build_system_prompt
 from tools import (
     TOOL_SPECS,
+    execute_check_course_drop_impact,
     execute_check_travel_eligibility,
     execute_confirm_escalation,
-    execute_get_student_record,
+    execute_file_rcl_escalation,
 )
 
 logger = logging.getLogger()
@@ -166,6 +167,28 @@ def _trip_visual(departure: str, return_date: str, evaluation: "escalation.Trave
     }
 
 
+def _course_drop_visual(evaluation: "escalation.CourseDropEvaluation") -> dict:
+    return {
+        "type": "course_drop",
+        "courseName": evaluation.course_name,
+        "credits": evaluation.credits,
+        "total": {
+            "current": evaluation.current_total,
+            "projected": evaluation.projected_total,
+            "min": evaluation.min_total,
+            "meetsMinimum": evaluation.meets_total_minimum,
+        },
+        "inPerson": {
+            "current": evaluation.current_inperson,
+            "projected": evaluation.projected_inperson,
+            "min": evaluation.min_inperson,
+            "meetsMinimum": evaluation.meets_physical_presence_minimum,
+        },
+        "compliant": evaluation.compliant,
+        "alternatives": evaluation.alternatives,
+    }
+
+
 def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, bool, dict]:
     """
     Runs one tool call and folds in its deterministic evaluation. Returns
@@ -183,38 +206,6 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         frontend to render a real chart from — not something the model sees
         or influences.
     """
-    if name == "get_student_record":
-        record = execute_get_student_record(student_id, tool_input)
-        summary = escalation.summarize_record(record)
-        tool_result = {
-            **record,
-            "course_hours_this_week": summary.course_hours_this_week,
-            "total_hours_used_this_week": summary.total_hours_used,
-            "work_hours_remaining": summary.work_hours_remaining,
-            "over_cap_by": summary.over_cap_by,
-            "course_load_meets_minimum": summary.course_load_meets_minimum,
-            "instruction": (
-                "Break the answer into a short bulleted list: each course "
-                "and its hours this week, then hours already worked, then "
-                "the total against the cap. Use the precomputed totals "
-                "above rather than adding the numbers yourself. If "
-                "over_cap_by is greater than 0, say explicitly how many "
-                "hours over the cap the student already is — don't just "
-                "say 'at your limit', since they're actually past it."
-            ),
-        }
-        visual = {
-            "type": "work_hours",
-            "cap": record["work_hour_cap_weekly"],
-            "courses": record["courses"],
-            "workHours": summary.work_hours_logged,
-            "courseHours": summary.course_hours_this_week,
-            "total": summary.total_hours_used,
-            "remaining": summary.work_hours_remaining,
-            "overBy": summary.over_cap_by,
-        }
-        return tool_result, False, visual
-
     if name == "check_travel_eligibility":
         record = execute_check_travel_eligibility(student_id, tool_input)
         departure = tool_input["travel_departure_date"]
@@ -345,6 +336,118 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
             "valid — let the student know no case is needed after all."
         )
         return tool_result, False, _trip_visual(departure, return_date, evaluation)
+
+    if name == "check_course_drop_impact":
+        record = execute_check_course_drop_impact(student_id, tool_input)
+        if record.get("error") == "course_not_found":
+            return (
+                {
+                    "error": "course_not_found",
+                    "available_courses": record["available_courses"],
+                    "instruction": (
+                        "That course name didn't match anything on the "
+                        "student's schedule. List their actual course "
+                        "names from `available_courses` and ask which one "
+                        "they mean."
+                    ),
+                },
+                False,
+                None,
+            )
+
+        evaluation = escalation.evaluate_course_drop(record, record["course"])
+        tool_result = {
+            "course_name": evaluation.course_name,
+            "credits": evaluation.credits,
+            "current_total_credits": evaluation.current_total,
+            "current_inperson_credits": evaluation.current_inperson,
+            "projected_total_credits": evaluation.projected_total,
+            "projected_inperson_credits": evaluation.projected_inperson,
+            "min_total_credits": evaluation.min_total,
+            "min_inperson_credits": evaluation.min_inperson,
+            "meets_total_minimum": evaluation.meets_total_minimum,
+            "meets_physical_presence_minimum": evaluation.meets_physical_presence_minimum,
+            "alternative_courses": evaluation.alternatives,
+        }
+
+        if evaluation.compliant:
+            tool_result["instruction"] = (
+                "Lead with the relevant policy facts as bullets (the "
+                "minimum total credit requirement and the physical-"
+                "presence minimum), then the specific before/after numbers "
+                "for both counts as bullets. Only after that, close with "
+                "one line confirming the drop is fine — never open with "
+                "that verdict. No Reduced Course Load (RCL) or escalation "
+                "is needed here."
+            )
+        else:
+            tool_result["instruction"] = (
+                "Lead with the relevant policy facts as bullets (the "
+                "minimum total credit requirement and the physical-"
+                "presence minimum), then the specific before/after numbers "
+                "for both counts as bullets — call out which one(s) fail. "
+                "Only after that, close with one line stating this drop "
+                "is not compliant on its own. If `alternative_courses` is "
+                "non-empty, name them as options the student could swap "
+                "into instead, and ask if they'd like to. Do not mention "
+                "Reduced Course Load (RCL) or file_rcl_escalation yet "
+                "unless the student says they can't take any of the "
+                "alternatives — wait for that before explaining the RCL "
+                "path."
+            )
+
+        return tool_result, False, _course_drop_visual(evaluation)
+
+    if name == "file_rcl_escalation":
+        record = execute_file_rcl_escalation(student_id, tool_input)
+        if record.get("error") == "course_not_found":
+            return (
+                {
+                    "error": "course_not_found",
+                    "available_courses": record["available_courses"],
+                    "instruction": (
+                        "That course name didn't match anything on the "
+                        "student's schedule. List their actual course "
+                        "names from `available_courses` and ask which one "
+                        "they mean."
+                    ),
+                },
+                False,
+                None,
+            )
+
+        evaluation = escalation.evaluate_course_drop(record, record["course"])
+        ticket = {
+            "ticket_type": "URGENT_RCL_ESCALATION",
+            "routing_queue": "Immigration_Medical_Exemptions",
+            "student_id": student_id,
+            "risk_level": "CRITICAL_STATUS_VIOLATION_PENDING",
+            "course_name": evaluation.course_name,
+            "context_summary": (
+                f"Student attempted to drop {evaluation.course_name}, "
+                f"which would bring total credits to "
+                f"{evaluation.projected_total} (minimum "
+                f"{evaluation.min_total}) and in-person credits to "
+                f"{evaluation.projected_inperson} (minimum "
+                f"{evaluation.min_inperson}). Student rejected course "
+                "substitutions citing severe health issues. Escalated to "
+                "initiate the Medical RCL workflow."
+            ),
+        }
+
+        tool_result = {
+            **ticket,
+            "instruction": (
+                "This is now filed with a human International Student "
+                "Advisor as an urgent Medical Reduced Course Load (RCL) "
+                "case. Tell the student plainly that it's filed, that an "
+                "advisor will review their profile and send a secure link "
+                "to upload documentation, and that their visa status and "
+                "work authorization stay fully protected while this is "
+                "pending."
+            ),
+        }
+        return tool_result, True, {"type": "rcl_ticket", **ticket}
 
     raise ValueError(f"unknown tool: {name}")
 

@@ -255,73 +255,113 @@ function appendTypingIndicator() {
 // actual data rather than parsing it back out of the model's prose.
 
 function renderVisual(visual) {
-  if (visual.type === "work_hours") return renderHoursVisual(visual);
   if (visual.type === "trip_attendance") return renderTripAttendanceVisual(visual);
+  if (visual.type === "course_drop") return renderCourseDropVisual(visual);
+  if (visual.type === "rcl_ticket") return renderRclTicketVisual(visual);
   return null;
 }
 
-function renderHoursVisual(visual) {
-  const cap = visual.cap;
-  const total = visual.total;
-  const overBy = visual.overBy || 0;
-  const atCapOrOver = visual.remaining <= 0;
-
-  // Segment widths as a share of the cap. If the total exceeds the cap,
-  // scale both segments down proportionally so they still sum to exactly
-  // 100% of the bar (their ratio to each other is preserved either way) —
-  // the actual numbers in the header and caption carry the overage, not
-  // the bar spilling past its own edge.
-  const scale = total > cap && total > 0 ? cap / total : 1;
-  const coursePct = cap > 0 ? Math.max(0, ((visual.courseHours * scale) / cap) * 100) : 0;
-  const workPct = cap > 0 ? Math.max(0, ((visual.workHours * scale) / cap) * 100) : 0;
-
+function renderCourseDropVisual(visual) {
   const container = document.createElement("div");
-  container.className = "visual meter-visual";
+  container.className = "visual course-drop-visual";
 
-  const row = document.createElement("div");
-  row.className = "visual-row";
-  row.innerHTML = `<span class="visual-label">Weekly hours</span><span class="visual-value">${total} / ${cap} hrs</span>`;
-  container.appendChild(row);
+  const label = document.createElement("div");
+  label.className = "visual-label";
+  label.textContent = "Course drop impact";
+  container.appendChild(label);
 
-  const track = document.createElement("div");
-  track.className = "meter-track" + (atCapOrOver ? " warn" : "");
-  const courseFill = document.createElement("div");
-  courseFill.className = "meter-fill course";
-  courseFill.style.width = `${coursePct}%`;
-  const workFill = document.createElement("div");
-  workFill.className = "meter-fill work";
-  workFill.style.width = `${workPct}%`;
-  track.appendChild(courseFill);
-  track.appendChild(workFill);
-  container.appendChild(track);
+  const subtitle = document.createElement("div");
+  subtitle.className = "visual-value drop-subtitle";
+  subtitle.textContent = `Dropping ${visual.courseName} (${visual.credits} credit${visual.credits === 1 ? "" : "s"})`;
+  container.appendChild(subtitle);
 
-  const breakdown = document.createElement("div");
-  breakdown.className = "hours-breakdown";
-  for (const course of visual.courses || []) {
-    breakdown.appendChild(makeHoursRow("course", course.name, course.hours_this_week));
-  }
-  breakdown.appendChild(makeHoursRow("work", "Worked this week", visual.workHours));
-  container.appendChild(breakdown);
+  const meters = document.createElement("div");
+  meters.className = "credit-meters";
+  meters.appendChild(makeCreditMeter("Total credits", visual.total));
+  meters.appendChild(makeCreditMeter("In-person credits", visual.inPerson));
+  container.appendChild(meters);
 
   const caption = document.createElement("div");
-  caption.className = "visual-caption" + (atCapOrOver ? " warn" : "");
-  if (overBy > 0) {
-    caption.textContent = `${overBy} hour${overBy === 1 ? "" : "s"} over your ${cap}-hour weekly cap`;
-  } else if (atCapOrOver) {
-    caption.textContent = "At your weekly limit — resets next week";
-  } else {
-    caption.textContent = `${visual.remaining} hour${visual.remaining === 1 ? "" : "s"} remaining this week`;
-  }
+  caption.className = "visual-caption" + (visual.compliant ? "" : " warn");
+  caption.textContent = visual.compliant
+    ? "Both stay at or above the minimum — this drop is fine."
+    : "Falls below the minimum on at least one count — not compliant on its own.";
   container.appendChild(caption);
+
+  if (!visual.compliant && visual.alternatives && visual.alternatives.length) {
+    const list = document.createElement("div");
+    list.className = "alt-list";
+    const altLabel = document.createElement("div");
+    altLabel.className = "alt-list-label";
+    altLabel.textContent = "Suggested alternatives";
+    list.appendChild(altLabel);
+    for (const alt of visual.alternatives) {
+      const row = document.createElement("div");
+      row.className = "alt-row";
+      const modeLabel = alt.delivery_mode === "in_person" ? "in-person" : alt.delivery_mode;
+      row.textContent = `${alt.name} — ${modeLabel}, ${alt.credits}cr`;
+      list.appendChild(row);
+    }
+    container.appendChild(list);
+  }
 
   return container;
 }
 
-function makeHoursRow(kind, label, hours) {
+function makeCreditMeter(label, counts) {
+  const wrap = document.createElement("div");
+  wrap.className = "credit-meter";
+
   const row = document.createElement("div");
-  row.className = "hours-row";
-  row.innerHTML = `<span class="hours-dot ${kind}"></span><span class="hours-row-label">${escapeHtml(label)}</span><span class="hours-row-value">${hours} hr${hours === 1 ? "" : "s"}</span>`;
-  return row;
+  row.className = "credit-meter-row";
+  row.innerHTML = `<span class="credit-meter-label">${escapeHtml(label)}</span><span class="credit-meter-value">${counts.projected} / ${counts.min} min</span>`;
+  wrap.appendChild(row);
+
+  const trackWrap = document.createElement("div");
+  trackWrap.className = "credit-track-wrap";
+
+  const track = document.createElement("div");
+  track.className = "meter-track credit-track" + (counts.meetsMinimum ? "" : " warn");
+  const fillPct = counts.current > 0 ? Math.max(0, (counts.projected / counts.current) * 100) : 0;
+  const fill = document.createElement("div");
+  fill.className = "meter-fill" + (counts.meetsMinimum ? "" : " danger");
+  fill.style.width = `${fillPct}%`;
+  track.appendChild(fill);
+  trackWrap.appendChild(track);
+
+  const markerPct = counts.current > 0 ? Math.min(100, (counts.min / counts.current) * 100) : 0;
+  const marker = document.createElement("div");
+  marker.className = "credit-marker";
+  marker.style.left = `calc(${markerPct}% - 1px)`;
+  trackWrap.appendChild(marker);
+
+  wrap.appendChild(trackWrap);
+  return wrap;
+}
+
+function renderRclTicketVisual(visual) {
+  const container = document.createElement("div");
+  container.className = "visual rcl-ticket-visual";
+
+  const label = document.createElement("div");
+  label.className = "visual-label";
+  label.textContent = "Advisor escalation filed";
+  container.appendChild(label);
+
+  const rows = document.createElement("div");
+  rows.className = "ticket-rows";
+  rows.innerHTML =
+    `<div class="ticket-row"><span class="ticket-key">Course</span><span class="ticket-val">${escapeHtml(visual.course_name)}</span></div>` +
+    `<div class="ticket-row"><span class="ticket-key">Routed to</span><span class="ticket-val">${escapeHtml(visual.routing_queue.replace(/_/g, " "))}</span></div>` +
+    `<div class="ticket-row"><span class="ticket-key">Risk level</span><span class="ticket-badge">${escapeHtml(visual.risk_level.toLowerCase().replace(/_/g, " "))}</span></div>`;
+  container.appendChild(rows);
+
+  const summary = document.createElement("div");
+  summary.className = "ticket-summary";
+  summary.textContent = visual.context_summary;
+  container.appendChild(summary);
+
+  return container;
 }
 
 function renderTripAttendanceVisual(visual) {

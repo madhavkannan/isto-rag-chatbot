@@ -36,33 +36,28 @@ POLICY_CHUNKS = [
             "Minimum Course Load Policy: To maintain valid immigration status, "
             "international students must be enrolled in at least 12 credit "
             "hours per semester (undergraduate) or the equivalent full-time "
-            "load defined by their program. Falling below this minimum without "
-            "prior ISTO authorization (e.g., for an approved reduced course "
-            "load) can jeopardize status and any pending endorsement requests."
+            "load defined by their program, and at least 9 of those credits "
+            "(undergraduate) must be in-person — no more than 3 credits of "
+            "online coursework count toward the minimum. Falling below either "
+            "threshold without prior ISTO authorization (e.g., an approved "
+            "reduced course load) can jeopardize status and any pending "
+            "endorsement requests."
         ),
     },
     {
-        "id": "work-hours-1",
-        "doc": "On-Campus Work-Hour Cap Policy",
+        "id": "rcl-exemption-1",
+        "doc": "Medical Reduced Course Load (RCL) Exemption",
         "text": (
-            "On-Campus Work-Hour Cap Policy: While classes are in session, "
-            "international students on an on-campus work authorization may "
-            "work up to 20 hours per week total, combined across all on-campus "
-            "jobs. This cap is a hard limit tied to maintaining full-time "
-            "student status — hours cannot be exceeded even temporarily, "
-            "including during weeks with extra shifts or overtime offers."
-        ),
-    },
-    {
-        "id": "work-hours-2",
-        "doc": "On-Campus Work-Hour Cap Policy",
-        "text": (
-            "Work-Hour Cap and Course Load Interaction: The 20-hour weekly cap "
-            "applies regardless of a student's current course load, as long as "
-            "they remain enrolled full-time. There is no partial exemption for "
-            "students who are only slightly above the minimum required "
-            "credits — the cap is the same 20 hours per week for everyone on "
-            "on-campus work authorization."
+            "Medical Reduced Course Load (RCL) Exemption: A student who needs "
+            "to drop below the minimum full-time credit or physical-presence "
+            "requirement for a documented medical or psychological condition "
+            "may request an RCL exemption. This is the only way to drop below "
+            "the minimum without triggering an automatic status violation, and "
+            "it requires review and approval by a human International Student "
+            "Advisor — it cannot be self-service or automated. Supporting "
+            "documentation must come from a licensed physician or psychologist "
+            "and confirm the condition prevents full-time enrollment for a "
+            "specific, limited period."
         ),
     },
 ]
