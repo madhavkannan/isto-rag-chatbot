@@ -13,6 +13,12 @@ const el = (id) => document.getElementById(id);
 el("login-btn").addEventListener("click", onLogin);
 el("logout-btn").addEventListener("click", onLogout);
 el("composer").addEventListener("submit", onSend);
+document.querySelectorAll(".starter-chip").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    el("message-input").value = btn.dataset.prompt;
+    el("composer").requestSubmit();
+  });
+});
 
 async function onLogin() {
   clearError();
@@ -46,6 +52,7 @@ async function onLogin() {
     currentUser = username;
     history = [];
     el("chat-window").innerHTML = "";
+    el("starter-prompts").classList.remove("hidden");
     el("session-label").innerHTML = `Signed in as <strong>${username}</strong>`;
     el("login-panel").classList.add("hidden");
     el("chat-panel").classList.remove("hidden");
@@ -72,6 +79,7 @@ async function onSend(e) {
   const message = input.value.trim();
   if (!message) return;
 
+  el("starter-prompts").classList.add("hidden");
   appendMessage("user", message, false);
   input.value = "";
 
@@ -174,6 +182,13 @@ function renderTravelVisual(visual) {
   const departure = new Date(`${visual.departure}T00:00:00Z`);
   const returnDate = new Date(`${visual.return}T00:00:00Z`);
   const expiry = new Date(`${visual.expiry}T00:00:00Z`);
+  // "today" comes from the server (the same source of truth the escalation
+  // decision uses), not the viewer's clock, so wording stays consistent
+  // regardless of who's looking at it or when.
+  const today = visual.today ? new Date(`${visual.today}T00:00:00Z`) : new Date();
+  const expiryIsPast = expiry < today;
+  const expiryVerb = expiryIsPast ? "expired" : "expires";
+  const expiryWhat = expiryIsPast ? "Expired" : "Expires";
 
   const totalMs = returnDate - departure;
   let splitPct;
@@ -214,7 +229,7 @@ function renderTravelVisual(visual) {
   ticks.appendChild(makeTickmark("start", 0, formatDate(visual.departure), "Depart"));
   if (!fullyCovered && !fullyUncovered) {
     const labelPct = Math.max(14, Math.min(86, splitPct));
-    ticks.appendChild(makeTickmark("mid warn", labelPct, formatDate(visual.expiry), "Expires"));
+    ticks.appendChild(makeTickmark("mid warn", labelPct, formatDate(visual.expiry), expiryWhat));
   }
   ticks.appendChild(makeTickmark("end", 100, formatDate(visual.return), "Return"));
   container.appendChild(ticks);
@@ -224,7 +239,7 @@ function renderTravelVisual(visual) {
   if (fullyCovered) {
     caption.textContent = `Endorsement valid through ${formatDate(visual.expiry)} — covers the whole trip`;
   } else if (fullyUncovered) {
-    caption.textContent = `Endorsement expired ${formatDate(visual.expiry)} — not valid for any of this trip`;
+    caption.textContent = `Endorsement ${expiryVerb} ${formatDate(visual.expiry)} — not valid for any of this trip`;
   } else {
     caption.textContent = `Covered through ${formatDate(visual.expiry)}, then a gap until your return`;
   }

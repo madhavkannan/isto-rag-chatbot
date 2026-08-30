@@ -1,6 +1,8 @@
 """
 Tool definitions and executors: get_student_record (general lookup, no
-params) and check_travel_eligibility (Story 1, requires both travel dates).
+params), check_travel_eligibility (Story 1, requires both travel dates,
+read-only — never files an escalation itself), and confirm_escalation
+(files the escalation, only after the student has explicitly agreed).
 
 Security boundary (Story 3): neither schema below takes a student
 identifier. The model cannot pass one in, strict-schema validation on the
@@ -64,7 +66,35 @@ TOOL_SPECS = [
                 "endorsement covers a specific trip. Requires both the "
                 "planned departure and return dates — ask the student for "
                 "both conversationally before calling this; the tool "
-                "cannot be called with only one date or none."
+                "cannot be called with only one date or none. Read-only: "
+                "this never files an escalation by itself, even if the "
+                "trip isn't covered — use confirm_escalation for that, and "
+                "only after the student has explicitly agreed."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "travel_departure_date": _DATE_FIELD,
+                        "travel_return_date": _DATE_FIELD,
+                    },
+                    "required": ["travel_departure_date", "travel_return_date"],
+                    "additionalProperties": False,
+                }
+            },
+            "strict": True,
+        }
+    },
+    {
+        "toolSpec": {
+            "name": "confirm_escalation",
+            "description": (
+                "Actually file the ISTO escalation for a travel/endorsement "
+                "gap that check_travel_eligibility already surfaced. Only "
+                "call this after the student has clearly said they want it "
+                "escalated — never immediately after check_travel_eligibility "
+                "on its own. Re-checks the same dates itself before filing, "
+                "so it's safe even if called speculatively."
             ),
             "inputSchema": {
                 "json": {
@@ -113,3 +143,12 @@ def execute_check_travel_eligibility(student_id: str, tool_input: dict) -> dict:
         "travel_departure_date": tool_input["travel_departure_date"],
         "travel_return_date": tool_input["travel_return_date"],
     }
+
+
+def execute_confirm_escalation(student_id: str, tool_input: dict) -> dict:
+    # Same lookup as check_travel_eligibility — confirm_escalation
+    # re-derives the record and re-evaluates from scratch rather than
+    # trusting that whatever the model saw earlier in the conversation is
+    # still accurate, so it's safe to call even if a confirmation arrives
+    # out of order.
+    return execute_check_travel_eligibility(student_id, tool_input)
