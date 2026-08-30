@@ -274,6 +274,159 @@ button:active {
   background: var(--escalated-border);
 }
 
+/* --- Structured visuals (work-hour meter, travel-coverage timeline) --- */
+.visual {
+  margin-top: 16px;
+}
+
+.visual-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.visual-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.msg.user .visual-label {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.visual-value {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.visual-caption {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 12px;
+}
+
+.visual-caption.warn {
+  color: var(--escalated-text);
+  font-weight: 500;
+}
+
+.meter-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(47, 93, 58, 0.12);
+  overflow: hidden;
+}
+
+.meter-track.warn {
+  background: rgba(182, 113, 47, 0.16);
+}
+
+.meter-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.meter-fill.warn {
+  background: var(--escalated-border);
+}
+
+/* Travel-coverage timeline: not a bounded quantity like the hours meter, so
+   this is a date-range bar instead — the fill shows how much of the trip
+   (departure -> return) falls before the endorsement expires. */
+.timeline-visual .visual-label {
+  margin-bottom: 18px;
+}
+
+.timeline-track {
+  position: relative;
+  height: 8px;
+  margin: 0 3px;
+}
+
+.timeline-seg {
+  position: absolute;
+  top: 0;
+  height: 100%;
+}
+
+.timeline-seg.safe {
+  background: var(--accent);
+}
+
+.timeline-seg.gap {
+  background: var(--escalated-border);
+}
+
+.timeline-seg.safe:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.timeline-seg.gap:last-child {
+  border-radius: 0 999px 999px 0;
+}
+
+.timeline-seg.safe:only-child,
+.timeline-seg.gap:only-child {
+  border-radius: 999px;
+}
+
+.timeline-tick {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 100%;
+  background: rgba(48, 46, 45, 0.3);
+}
+
+.timeline-ticks {
+  position: relative;
+  height: 48px;
+  margin: 0 3px;
+}
+
+.timeline-tickmark {
+  position: absolute;
+  top: 16px;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.timeline-tickmark.start {
+  transform: translateX(0);
+  text-align: left;
+}
+
+.timeline-tickmark.end {
+  transform: translateX(-100%);
+  text-align: right;
+}
+
+.timeline-tickmark .date {
+  display: block;
+}
+
+.timeline-tickmark .what {
+  display: block;
+  margin-top: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.timeline-tickmark.warn .what {
+  color: var(--escalated-text);
+}
+
 #composer {
   display: flex;
   gap: 10px;

@@ -15,7 +15,13 @@ asked live):
   5. If the model calls a tool, execute it scoped to the authenticated
      caller only (tools.py), evaluate deterministic escalation rules
      (escalation.py), and call the model again for the final answer.
-  6. Log the exchange (CloudWatch) and return {reply, escalated}.
+  6. Log the exchange (CloudWatch) and return {reply, escalated, visual}.
+
+`visual` carries the structured numbers behind whichever tool the model
+called this turn (hours cap/logged/remaining, or trip/endorsement dates) so
+the frontend can render a real meter/timeline from actual data instead of
+parsing them back out of the model's prose. It's None when no tool was
+called this turn (e.g. the model is still asking for travel dates).
 """
 import json
 import logging
@@ -45,12 +51,12 @@ def handler(event, context):
 
         if looks_like_injection(message):
             logger.warning(json.dumps({"event": "injection_heuristic_triggered", "student_id": student_id, "message": message}))
-            return _response(200, {"reply": REFUSAL_MESSAGE, "escalated": False})
+            return _response(200, {"reply": REFUSAL_MESSAGE, "escalated": False, "visual": None})
 
-        reply, escalated = _run_conversation(student_id, message, history)
+        reply, escalated, visual = _run_conversation(student_id, message, history)
 
         logger.info(json.dumps({"event": "chat_response", "student_id": student_id, "escalated": escalated}))
-        return _response(200, {"reply": reply, "escalated": escalated})
+        return _response(200, {"reply": reply, "escalated": escalated, "visual": visual})
 
     except PermissionError as e:
         logger.warning(json.dumps({"event": "auth_error", "error": str(e)}))
@@ -76,7 +82,7 @@ def _resolve_student_id(event) -> str:
         raise PermissionError("missing or invalid JWT claims") from e
 
 
-def _run_conversation(student_id: str, message: str, history: list[dict]) -> tuple[str, bool]:
+def _run_conversation(student_id: str, message: str, history: list[dict]) -> tuple[str, bool, dict | None]:
     policy_chunks = kb_retrieval.search_policy_chunks(message)
     system_prompt = build_system_prompt(policy_chunks)
 
@@ -84,6 +90,7 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
 
     response = openai_client.converse(messages, system_prompt, tools=TOOL_SPECS)
     escalated = False
+    visual = None
 
     # Tool-calling loop — bounded, since a single well-scoped tool can only
     # meaningfully be called once per turn in this demo.
@@ -96,8 +103,8 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
             break
 
         tool_use = next(b["toolUse"] for b in assistant_message["content"] if "toolUse" in b)
-        tool_result_content = _execute_tool(student_id, tool_use["name"], tool_use["input"])
-        if tool_result_content.pop("_escalate", False):
+        tool_result_content, tool_escalated, visual = _execute_tool(student_id, tool_use["name"], tool_use["input"])
+        if tool_escalated:
             escalated = True
             tool_result_content["escalation_instruction"] = (
                 "This case MUST be escalated to ISTO — tell the student that "
@@ -125,34 +132,53 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
         response = openai_client.converse(messages, system_prompt, tools=TOOL_SPECS)
 
     final_text = "".join(b.get("text", "") for b in response["output"]["message"]["content"])
-    return final_text, escalated
+    return final_text, escalated, visual
 
 
-def _execute_tool(student_id: str, name: str, tool_input: dict) -> dict:
+def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, bool, dict]:
     """
-    Runs one tool call and folds in its deterministic evaluation. Returns the
-    dict to send back to the model as the tool result, plus an internal
-    "_escalate" key (popped by the caller, never sent to the model as a
-    field for it to act on) — the escalation decision itself is made here in
-    code, not reported by or delegated to the model.
+    Runs one tool call and folds in its deterministic evaluation. Returns
+    (tool_result_for_model, escalate, visual):
+      - tool_result_for_model: what's sent back to the model as the tool
+        result (the escalation decision itself is made here in code, not
+        reported by or delegated to the model — this dict never contains an
+        "escalate" field, only the escalation_instruction the caller adds
+        after the fact when `escalate` is True).
+      - escalate: the Lambda's own decision, never sent to the model as-is.
+      - visual: the structured numbers behind this tool call, for the
+        frontend to render a real chart from — not something the model sees
+        or influences.
     """
     if name == "get_student_record":
         record = execute_get_student_record(student_id, tool_input)
         summary = escalation.summarize_record(record)
-        return {
+        tool_result = {
             **record,
             "work_hours_remaining": summary.work_hours_remaining,
             "course_load_meets_minimum": summary.course_load_meets_minimum,
         }
+        visual = {
+            "type": "work_hours",
+            "cap": record["work_hour_cap_weekly"],
+            "logged": record["hours_logged_this_week"],
+            "remaining": summary.work_hours_remaining,
+        }
+        return tool_result, False, visual
 
     if name == "check_travel_eligibility":
         record = execute_check_travel_eligibility(student_id, tool_input)
         evaluation = escalation.evaluate_travel(record)
-        return {
+        tool_result = {
             **record,
             "course_load_meets_minimum": evaluation.course_load_meets_minimum,
-            "_escalate": evaluation.escalate,
         }
+        visual = {
+            "type": "travel_coverage",
+            "departure": record["travel_departure_date"],
+            "return": record["travel_return_date"],
+            "expiry": record["endorsement_expiry"],
+        }
+        return tool_result, evaluation.escalate, visual
 
     raise ValueError(f"unknown tool: {name}")
 
