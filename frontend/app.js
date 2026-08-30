@@ -268,17 +268,35 @@ function renderCourseListVisual(visual) {
 
   const label = document.createElement("div");
   label.className = "visual-label";
-  label.textContent = "Your courses";
+  label.textContent = "Your courses — tap one to drop it";
   container.appendChild(label);
 
   const list = document.createElement("div");
-  list.className = "course-mode-list";
+  list.className = "course-pill-list";
   for (const course of visual.courses) {
-    list.appendChild(makeCourseModeRow(course.name, course.delivery_mode));
+    list.appendChild(makeCoursePill(course));
   }
   container.appendChild(list);
 
   return container;
+}
+
+function makeCoursePill(course) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "course-pill";
+  const modeLabel = course.delivery_mode === "in_person" ? "In-person" : course.delivery_mode === "hybrid" ? "Hybrid" : "Online";
+  const credits = course.credits || 0;
+  pill.innerHTML =
+    `<span class="course-pill-name">${escapeHtml(course.name)}</span>` +
+    `<span class="course-pill-meta">${credits} cr · ${modeLabel}</span>`;
+  pill.addEventListener("click", () => {
+    const input = el("message-input");
+    if (input.disabled) return;
+    input.value = `I want to drop ${course.name}`;
+    el("composer").requestSubmit();
+  });
+  return pill;
 }
 
 function renderCourseDropVisual(visual) {
@@ -451,15 +469,10 @@ function renderTripAttendanceVisual(visual, escalated) {
   }
   container.appendChild(captionList);
 
-  if (visual.recommendedReturn) {
-    const rec = document.createElement("div");
-    rec.className = "recommendation";
-    rec.innerHTML =
-      '<div class="rec-label">Recommended compliant alternative</div>' +
-      `<div class="rec-text">Keep your ${formatDate(visual.departure)} departure, but return by ` +
-      `<strong>${formatDate(visual.recommendedReturn)}</strong> instead — every day through then is clear.</div>`;
-    container.appendChild(rec);
-  }
+  // No separate "recommended alternative" card here — when there's one,
+  // the reply text already states it as one of the ISTO-case options
+  // (see check_travel_eligibility's instructions in app.py), so a second
+  // copy in the visual would just duplicate it.
 
   const sig = visual.signature;
   const sigOk = sig.status === "ok";

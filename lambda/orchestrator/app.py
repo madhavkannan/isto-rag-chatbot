@@ -282,13 +282,15 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         if evaluation.needs_escalation:
             if not evaluation.attendance.compliant and evaluation.signature.status != "ok":
                 instructions.append(
-                    "Both problems need ISTO, but as ONE case, not two. Ask the "
-                    "student to choose: (a) take the recommended compliant "
-                    "dates, so the case is just a signature renewal, or (b) "
-                    "keep their original requested dates, so the same case "
-                    "must also request an exception for the attendance "
-                    "conflict — make clear that exception is ISTO's call, not "
-                    "guaranteed. Wait for their choice, then call "
+                    "Both problems need ISTO, but as ONE case, not two. "
+                    "Present the choice as two separate, clearly labeled "
+                    "bullets — '- **Option A:** ...' and '- **Option B:** "
+                    "...' — never as a single run-on sentence. Option A is "
+                    "the recommended compliant dates (case is just a "
+                    "signature renewal). Option B is their original "
+                    "requested dates (same case, but it also requests an "
+                    "attendance exception — make clear that's ISTO's call, "
+                    "not guaranteed). Wait for their choice, then call "
                     "confirm_escalation with whichever dates they settle on."
                 )
             else:
@@ -356,8 +358,9 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         tool_result = {
             "courses": record["courses"],
             "instruction": (
-                "Present these as a short bulleted list of course names "
-                "(you can mention delivery mode too) and ask which one "
+                "Do NOT list the courses yourself — a selectable list is "
+                "shown alongside your reply, so re-listing them in prose "
+                "would just be duplicated. Just briefly ask which course "
                 "they'd like to drop. Do not call check_course_drop_impact "
                 "until they name one."
             ),

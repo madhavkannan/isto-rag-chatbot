@@ -246,11 +246,18 @@ Resources:
           - start: "2026-10-05"
             end: "2026-10-09"
             label: Semester Break
+        # Every course is 3 credits (a flat per-course credit value, not a
+        # per-week contact-hour figure) and the five below sum exactly to
+        # C_total=15: one online (3, matching C_online) + four in-person/
+        # hybrid (12, matching C_inperson) — so list_my_courses' totals are
+        # internally consistent, not just the flat record-level numbers.
         courses:
           - name: Microeconomics 201
             delivery_mode: online
+            credits: 3
           - name: Data Structures Lab
             delivery_mode: hybrid
+            credits: 3
             meeting_days: [Tue, Thu]
             # This week's Tuesday session is an async reading module — the
             # Thursday session isn't flagged, so it still requires physical
@@ -263,6 +270,12 @@ Resources:
           # Story 1 travel calendar and should never appear there.
           - name: Statistics 210
             delivery_mode: in_person
+            credits: 3
+          - name: Intro to Psychology
+            delivery_mode: in_person
+            credits: 3
+          - name: World History 101
+            delivery_mode: hybrid
             credits: 3
       UserBUsername: userb
       UserBPassword: !Ref TestUserBPassword
@@ -281,32 +294,43 @@ Resources:
           - start: "2026-10-05"
             end: "2026-10-09"
             label: Semester Break
+        # Every course is 3 credits, summing exactly to C_total=12: one
+        # online (3, matching C_online) + three in-person/hybrid (9,
+        # matching C_inperson).
         courses:
           # Story 2 (course drop / Medical RCL): B is already at both
           # minimums with zero buffer (see C_total/C_inperson above), so
-          # dropping this 4-credit in-person course fails BOTH counts —
-          # C_total 12->8 (needs 12), C_inperson 9->5 (needs 9). Also the
-          # Story 1 travel conflict course, unchanged.
+          # dropping this 3-credit in-person course fails BOTH counts —
+          # C_total 12->9 (needs 12), C_inperson 9->6 (needs 9). Also the
+          # Story 1 travel conflict course, unchanged. Both alternatives
+          # are in-person/hybrid, not online — an online swap wouldn't
+          # restore the in-person minimum this drop would break, so
+          # offering one would be nonsensical.
           - name: Organic Chemistry Lecture
             delivery_mode: in_person
             meeting_days: [Wed, Fri]
-            credits: 4
+            credits: 3
             alternative_courses:
               - name: General Chemistry Survey
                 delivery_mode: in_person
-                credits: 4
+                credits: 3
               - name: Intro to Biochemistry
-                delivery_mode: online
-                credits: 4
+                delivery_mode: hybrid
+                credits: 3
           - name: Organic Chemistry Lab
             delivery_mode: hybrid
+            credits: 3
             # Fortnightly — meets on specific dates rather than every week,
             # so an explicit date list, not a weekly recurrence.
             session_dates: ["2026-10-15"]
           - name: Organic Chemistry Recitation
             delivery_mode: hybrid
+            credits: 3
             meeting_days: [Tue]
             remote_session_dates: ["2026-10-13"]
+          - name: Chemistry in Society
+            delivery_mode: online
+            credits: 3
 
   # ---------------------------------------------------------------------
   # Frontend hosting: private S3 bucket behind CloudFront (Origin Access

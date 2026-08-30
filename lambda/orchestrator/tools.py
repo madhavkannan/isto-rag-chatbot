@@ -218,7 +218,12 @@ def execute_list_my_courses(student_id: str, _tool_input: dict) -> dict:
     record = _fetch_record(student_id)
     return {
         "courses": [
-            {"name": c["name"], "delivery_mode": c.get("delivery_mode")} for c in record.get("courses", [])
+            {
+                "name": c["name"],
+                "delivery_mode": c.get("delivery_mode"),
+                "credits": int(c.get("credits", 0)),
+            }
+            for c in record.get("courses", [])
         ]
     }
 
