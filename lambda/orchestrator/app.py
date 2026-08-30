@@ -9,7 +9,8 @@ asked live):
   1. Resolve the caller's identity from the verified Cognito JWT (never from
      the request body).
   2. Deterministic injection heuristic (guardrails.py) — fast refusal path.
-  3. RAG: embed the message, retrieve policy chunks (kb_retrieval.py).
+  3. Retrieve policy chunks (kb_retrieval.py) — keyword-matched, no vector
+     KB on this branch (demo modification, see kb_retrieval.py).
   4. Call the model (openai_client.py) with the Story 1 (travel) and
      Story 2 (course drop / Medical RCL) tools available.
   5. If the model calls a tool, execute it scoped to the authenticated

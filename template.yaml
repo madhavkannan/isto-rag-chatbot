@@ -2,12 +2,14 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: >
   ISTO Personalized Guidance demo (Meridian State University, fictional).
-  FALLBACK BRANCH: Cognito + DynamoDB + a single-node OpenSearch Service
-  domain (vector KB) + a combined guardrail/orchestrator Lambda behind API
-  Gateway, calling an OpenAI model directly via the OpenAI Platform API
-  (chat inference does NOT go through Bedrock on this branch — no Bedrock
-  Guardrails layer here; see README.md for why and when to use this branch
-  instead of main).
+  FALLBACK BRANCH: Cognito + DynamoDB + a combined guardrail/orchestrator
+  Lambda behind API Gateway, calling an OpenAI model directly via the
+  OpenAI Platform API (chat inference does NOT go through Bedrock on this
+  branch — no Bedrock Guardrails layer here; see README.md for why and
+  when to use this branch instead of main). Demo modification: no
+  OpenSearch/vector knowledge base — policy chunks are keyword-matched
+  from a small static list (kb_retrieval.py) instead, the same
+  simplification used to verify the Claude-direct branch.
 
 Parameters:
   Stage:
@@ -17,27 +19,20 @@ Parameters:
 
   OpenAIChatModel:
     Type: String
-    Default: gpt-4o
+    Default: gpt-5.6-sol
     Description: >
       OpenAI Platform API model id for chat inference, called directly
-      (not via Bedrock — see the branch description above). Confirm this
-      is a model your OpenAI Platform account actually has access to
-      before deploying; "gpt-4o" is a safe, widely-available default but
-      may not match whatever's current at demo time.
-
-  OpenAIEmbeddingModel:
-    Type: String
-    Default: text-embedding-3-small
-    Description: OpenAI embeddings model, called directly against the OpenAI Platform API.
+      (not via Bedrock — see the branch description above). Matches the
+      design doc's "GPT-5.6 Sol" reference (the same model main calls via
+      Bedrock as openai.gpt-5.6-sol). Confirm this is a model your OpenAI
+      Platform account actually has access to before deploying.
 
   OpenAIApiKey:
     Type: String
     NoEcho: true
     Description: >
-      OpenAI Platform API key. Used for both embeddings (KB indexing and
-      query-time retrieval) and chat inference on this branch — everything
-      goes through the OpenAI Platform API directly. Stored in Secrets
-      Manager, never in code or logs.
+      OpenAI Platform API key for chat inference on this branch. Stored in
+      Secrets Manager, never in code or logs.
 
   TestUserAPassword:
     Type: String
@@ -107,54 +102,20 @@ Resources:
           KeyType: HASH
 
   # ---------------------------------------------------------------------
-  # Secrets Manager: OpenAI credential (embeddings only; Bedrock chat
-  # inference is authorized via the Lambda's IAM role, not an API key)
+  # Secrets Manager: OpenAI credential for direct chat inference
   # ---------------------------------------------------------------------
   OpenAICredentialsSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
       Name: !Sub isto-demo-openai-credentials-${Stage}
-      Description: OpenAI Platform API key, used for embeddings calls only.
+      Description: OpenAI Platform API key, used for chat inference.
       SecretString: !Sub '{"OPENAI_API_KEY":"${OpenAIApiKey}"}'
 
   # ---------------------------------------------------------------------
-  # Knowledge base: Amazon OpenSearch Service, single-node provisioned
-  # domain (not Serverless — swapped in deliberately: this stack is built
-  # days ahead of the demo and left running idle in between, and
-  # Serverless's OCU-hour minimum floor makes multi-day idle time cost far
-  # more than a single small on-demand instance billed by the hour).
-  # ---------------------------------------------------------------------
-  KbDomain:
-    Type: AWS::OpenSearchService::Domain
-    Properties:
-      DomainName: !Sub isto-kb-${Stage}
-      EngineVersion: OpenSearch_2.11
-      ClusterConfig:
-        InstanceType: t3.small.search
-        InstanceCount: 1
-        DedicatedMasterEnabled: false
-        ZoneAwarenessEnabled: false
-      EBSOptions:
-        EBSEnabled: true
-        VolumeType: gp3
-        VolumeSize: 10
-      EncryptionAtRestOptions:
-        Enabled: true
-      NodeToNodeEncryptionOptions:
-        Enabled: true
-      DomainEndpointOptions:
-        EnforceHTTPS: true
-      AccessPolicies:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              AWS:
-                - !GetAtt OrchestratorFunctionRole.Arn
-                - !GetAtt KbSeedFunctionRole.Arn
-            Action: es:ESHttp*
-            Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
-
+  # No vector knowledge base on this branch (demo modification) — policy
+  # chunks are keyword-matched from a static list bundled in the
+  # orchestrator Lambda (kb_retrieval.py). No OpenSearch domain, no
+  # separate embeddings call for retrieval.
   # ---------------------------------------------------------------------
   # No Bedrock Guardrails on this branch (chat goes straight to the OpenAI
   # Platform API — see openai_client.py). Story 3's other three defense
@@ -209,9 +170,6 @@ Resources:
           TABLE_NAME: !Ref StudentRecordsTable
           SECRET_ARN: !Ref OpenAICredentialsSecret
           MODEL_ID: !Ref OpenAIChatModel
-          EMBEDDING_MODEL: !Ref OpenAIEmbeddingModel
-          OPENSEARCH_ENDPOINT: !Sub https://${KbDomain.DomainEndpoint}
-          KB_INDEX_NAME: !Sub isto-kb-${Stage}
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref StudentRecordsTable
@@ -221,13 +179,6 @@ Resources:
               Action:
                 - secretsmanager:GetSecretValue
               Resource: !Ref OpenAICredentialsSecret
-            - Sid: QueryKnowledgeBase
-              Effect: Allow
-              Action:
-                - es:ESHttpGet
-                - es:ESHttpPost
-                - es:ESHttpHead
-              Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
       Events:
         ChatApi:
           Type: HttpApi
@@ -350,51 +301,6 @@ Resources:
             delivery_mode: hybrid
             meeting_days: [Tue]
             remote_session_dates: ["2026-10-13"]
-
-  # ---------------------------------------------------------------------
-  # Custom resource: create the KB index and load synthetic policy docs
-  # ---------------------------------------------------------------------
-  KbSeedLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/isto-demo-kb-seed-${Stage}
-      RetentionInDays: 30
-
-  KbSeedFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub isto-demo-kb-seed-${Stage}
-      CodeUri: lambda/kb_seed/
-      Handler: app.handler
-      Timeout: 120
-      Environment:
-        Variables:
-          SECRET_ARN: !Ref OpenAICredentialsSecret
-          EMBEDDING_MODEL: !Ref OpenAIEmbeddingModel
-          OPENSEARCH_ENDPOINT: !Sub https://${KbDomain.DomainEndpoint}
-          KB_INDEX_NAME: !Sub isto-kb-${Stage}
-      Policies:
-        - Statement:
-            - Sid: ReadOpenAISecret
-              Effect: Allow
-              Action:
-                - secretsmanager:GetSecretValue
-              Resource: !Ref OpenAICredentialsSecret
-            - Sid: WriteKnowledgeBase
-              Effect: Allow
-              Action:
-                - es:ESHttpGet
-                - es:ESHttpPut
-                - es:ESHttpPost
-                - es:ESHttpHead
-              Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/isto-kb-${Stage}/*
-
-  KbSeedCustomResource:
-    Type: Custom::IstoDemoKbSeed
-    Properties:
-      ServiceToken: !GetAtt KbSeedFunction.Arn
-      CollectionEndpoint: !Sub https://${KbDomain.DomainEndpoint}
-      IndexName: !Sub isto-kb-${Stage}
 
   # ---------------------------------------------------------------------
   # Frontend hosting: private S3 bucket behind CloudFront (Origin Access

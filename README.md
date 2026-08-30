@@ -18,22 +18,22 @@ same escalation logic, same three of the four Story 3 defense layers; the
 one thing it drops is the Bedrock Guardrails layer specifically (see
 `lambda/orchestrator/openai_client.py`'s docstring for the full trade-off).
 
-**One OpenAI product surface**: OpenAI Platform/API. On this branch, *both*
-chat inference and embeddings call the OpenAI Platform API directly (on
-`main`, chat instead goes through Amazon Bedrock `bedrock-runtime`).
-Everything else (Cognito, DynamoDB, OpenSearch Service, Lambda, API
-Gateway, Secrets Manager, CloudWatch) is supporting AWS infrastructure.
+**One OpenAI product surface**: OpenAI Platform/API. On this branch, chat
+inference calls the OpenAI Platform API directly (on `main`, chat instead
+goes through Amazon Bedrock `bedrock-runtime`). Everything else (Cognito,
+DynamoDB, Lambda, API Gateway, Secrets Manager, CloudWatch) is supporting
+AWS infrastructure.
+
+**Demo modification**: no vector knowledge base / OpenSearch domain on
+this branch — policy chunks are keyword-matched from a small static list
+bundled in `lambda/orchestrator/kb_retrieval.py`, the same simplification
+used to verify the Claude-direct branch. This trades real semantic search
+for a much simpler, much faster deploy; it's a deliberate scope cut, not a
+stand-in for a production RAG design.
 
 ## Cost note
 
-The knowledge base runs on a **provisioned, single-node OpenSearch Service
-domain** (`t3.small.search`), not OpenSearch Serverless — a deliberate
-swap: this stack is typically built days ahead of the demo and left running
-idle in between, and Serverless bills a minimum OCU-hour floor around the
-clock regardless of use, while a small on-demand instance is billed per
-hour at one of AWS's cheapest search instance rates. Still **delete the
-stack once you're done recording**, since it's still a running instance +
-Cognito/API Gateway/etc, not something that scales to zero on its own:
+Still **delete the stack once you're done recording**:
 
 ```bash
 sam delete --stack-name isto-demo
@@ -41,9 +41,8 @@ sam delete --stack-name isto-demo
 
 ## Prerequisites
 
-- An OpenAI Platform API key with access to a chat model (default
-  `gpt-4o`) and `text-embedding-3-small`, and permission to create the AWS
-  resource types below.
+- An OpenAI Platform API key with access to a chat model, and permission
+  to create the AWS resource types below.
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) and AWS credentials configured locally.
 - Python 3.12 (no third-party pip dependencies are needed — every Lambda
   uses only the standard library plus `boto3`/`botocore`, which ship with the
@@ -58,9 +57,10 @@ sam deploy --guided \
   --parameter-overrides OpenAIApiKey=sk-... OpenAIChatModel=<your model id>
 ```
 
-`OpenAIChatModel` defaults to `gpt-4o` — confirm that's actually available
-on your OpenAI Platform account (or swap it for whatever is) before
-deploying. `TestUserAPassword` / `TestUserBPassword` default to demo-only
+`OpenAIChatModel` defaults to `gpt-5.6-sol` (matching the design doc's
+model reference) — confirm that's actually available on your OpenAI
+Platform account (or swap it for whatever is) before deploying.
+`TestUserAPassword` / `TestUserBPassword` default to demo-only
 values (`MeridianDemo!2026A` / `...B`) and can be overridden the same way.
 
 Deployment stands up, in one `sam deploy`:
@@ -71,23 +71,17 @@ Deployment stands up, in one `sam deploy`:
   password, hence the small Lambda-backed custom resource).
 - DynamoDB table, pre-seeded with the two test student records by the same
   bootstrap custom resource.
-- A single-node OpenSearch Service domain (encrypted at rest, HTTPS-only,
-  IAM-authenticated data plane), with its k-NN index created and the three
-  synthetic ISTO policy documents embedded and loaded by a second custom
-  resource.
 - The combined guardrail/orchestrator Lambda, least-privilege IAM role
-  (DynamoDB read on one table, Secrets Manager read on one secret,
-  OpenSearch data-plane read on one domain — nothing broader; no Bedrock
-  permissions needed on this branch).
+  (DynamoDB read on one table, Secrets Manager read on one secret —
+  nothing broader; no Bedrock permissions needed on this branch, no
+  OpenSearch permissions either since there's no vector KB here).
 - API Gateway (HTTP API) with a Cognito JWT authorizer in front of the
   Lambda.
 - Secrets Manager entry holding the OpenAI API key.
-- CloudWatch log groups for both the orchestrator and the two bootstrap
-  Lambdas.
+- CloudWatch log groups for both the orchestrator and bootstrap Lambdas.
 
-The OpenSearch domain itself typically takes 15-20 minutes to come up
-(`sam deploy` will just look like it's hanging on that resource — this is
-normal for provisioned OpenSearch Service, not a stuck deploy).
+No 15-20 minute wait for anything on this branch — no OpenSearch domain to
+provision, so this should come up in well under a minute.
 
 Note the stack outputs (`ApiUrl`, `UserPoolClientId`, `Region`) — the
 frontend needs them.
@@ -169,6 +163,5 @@ track: the safety property here is architectural, not behavioral.
 template.yaml              SAM/CloudFormation template
 lambda/orchestrator/        combined guardrail + orchestrator Lambda
 lambda/bootstrap/           custom resource: Cognito users + DynamoDB seed
-lambda/kb_seed/             custom resource: OpenSearch index + policy docs
 frontend/                   static HTML/JS chat client (no build step)
 ```

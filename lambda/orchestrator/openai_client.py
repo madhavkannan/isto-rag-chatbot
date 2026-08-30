@@ -15,10 +15,9 @@ is wired up — only app.py's import line changes.
 Trade-off versus the Bedrock path: no Bedrock Guardrails layer (AWS-native
 content/PII filtering on the model call itself). The other three Story 3
 defenses are unaffected: guardrails.py's heuristic pre-filter, the system
-prompt, and every tool's schema
-(still no student-id parameter, still strict — strict tool-use is in fact
-a first-class, native OpenAI Chat Completions feature, not something
-stretched onto Bedrock).
+prompt, and every tool's schema (still no student-id parameter, still
+strict — strict tool-use is in fact a first-class, native OpenAI Chat
+Completions feature, not something stretched onto Bedrock).
 """
 import json
 import os
@@ -38,6 +37,13 @@ def converse(messages: list[dict], system_prompt: str, tools: list[dict] | None 
         "messages": [{"role": "system", "content": system_prompt}] + _to_openai_messages(messages),
         "temperature": 0.15,
         "max_completion_tokens": 900,
+        # gpt-5.6-sol is a reasoning model — /v1/chat/completions rejects
+        # function tools outright unless reasoning is explicitly turned
+        # off ("Function tools with reasoning_effort are not supported...
+        # set reasoning_effort to 'none'"). Not just a workaround: this
+        # app is single-turn lookup-and-narrate, not multi-step reasoning,
+        # so "none" is also the semantically right setting here.
+        "reasoning_effort": "none",
     }
     if tools:
         body["tools"] = _to_openai_tools(tools)
