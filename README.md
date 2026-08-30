@@ -58,9 +58,11 @@ sam deploy --guided \
 ```
 
 `OpenAIChatModel` defaults to `gpt-5.6-sol` (matching the design doc's
-model reference) — confirm that's actually available on your OpenAI
-Platform account (or swap it for whatever is) before deploying.
-`TestUserAPassword` / `TestUserBPassword` default to demo-only
+model reference). A cheaper sibling, `gpt-5.6-luna`, was tried and
+reverted — it repeatedly got "is this date in the past?" wrong relative
+to the injected "today," which feeds the actual compliance math, not just
+prose. Confirm Sol is actually available on your OpenAI Platform account
+before deploying. `TestUserAPassword` / `TestUserBPassword` default to demo-only
 values (`MeridianDemo!2026A` / `...B`) and can be overridden the same way.
 
 Deployment stands up, in one `sam deploy`:

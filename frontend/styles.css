@@ -522,6 +522,45 @@ button:active {
   line-height: 1.5;
 }
 
+/* Course delivery-mode list — shown above the trip calendar (which courses
+   can even factor into a conflict) and reused as-is for "list my courses". */
+.course-mode-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.course-mode-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+}
+
+.course-mode-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.course-mode-badge.in-person {
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+}
+
+.course-mode-badge.hybrid {
+  background: rgba(182, 113, 47, 0.14);
+  color: var(--escalated-text);
+}
+
+.course-mode-badge.online {
+  background: var(--pill);
+  color: var(--pill-text);
+}
+
 /* Trip attendance calendar: a day-per-chip strip rather than a proportional
    range bar, since Rule 2 is a genuine day-by-day check, not a single
    before/after split point. */

@@ -24,8 +24,14 @@ Parameters:
       OpenAI Platform API model id for chat inference, called directly
       (not via Bedrock — see the branch description above). Matches the
       design doc's "GPT-5.6 Sol" reference (the same model main calls via
-      Bedrock as openai.gpt-5.6-sol). Confirm this is a model your OpenAI
-      Platform account actually has access to before deploying.
+      Bedrock as openai.gpt-5.6-sol). A cheaper sibling in the same
+      family, gpt-5.6-luna, was evaluated and rejected: identical system
+      prompt, identical tools, but Luna repeatedly miscounted whether a
+      given month/day had already passed relative to "today" — e.g.
+      insisting Oct 5 was in the past when today was Aug 30 — which feeds
+      directly into the day-by-day compliance math, not just narration.
+      Confirm this is a model your OpenAI Platform account actually has
+      access to before deploying.
 
   OpenAIApiKey:
     Type: String

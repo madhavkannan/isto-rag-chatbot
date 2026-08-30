@@ -39,6 +39,7 @@ from tools import (
     execute_check_travel_eligibility,
     execute_confirm_escalation,
     execute_file_rcl_escalation,
+    execute_list_my_courses,
 )
 
 logger = logging.getLogger()
@@ -155,11 +156,17 @@ def _days_as_dicts(days: list) -> list[dict]:
     return [{"date": d.iso_date, "status": d.status, "label": d.label, "conflicts": d.conflicts} for d in days]
 
 
-def _trip_visual(departure: str, return_date: str, evaluation: "escalation.TravelEvaluation") -> dict:
+def _trip_visual(
+    departure: str, return_date: str, evaluation: "escalation.TravelEvaluation", courses: list[dict]
+) -> dict:
     return {
         "type": "trip_attendance",
         "departure": departure,
         "return": return_date,
+        # Shown above the calendar so it's clear at a glance which courses
+        # can even factor into a physical-presence conflict — online
+        # courses never can, hybrid ones only on their non-remote days.
+        "courseModes": [{"name": c["name"], "deliveryMode": c["delivery_mode"]} for c in courses],
         "days": _days_as_dicts(evaluation.attendance.days),
         "compliant": evaluation.attendance.compliant,
         "recommendedReturn": evaluation.attendance.recommended_return_date,
@@ -231,25 +238,31 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         instructions = []
         if evaluation.attendance.compliant:
             instructions.append(
-                "Attendance is fully compliant. Lead with a bulleted list of "
-                "the relevant facts using the break/remote-session reasons in "
-                "`days` (entries with status 'break' or a 'label' explaining "
-                "why a day is safe), including the hard_deadline date as one "
-                "of the bullets if it's set. Only after the bullets, close "
-                "with one line confirming the trip works — never open with "
-                "that verdict."
+                "Attendance is fully compliant. Keep this brief — the "
+                "calendar visual shown alongside your reply already gives "
+                "the day-by-day breakdown (breaks, weekends, remote-"
+                "flagged sessions), so do NOT re-list each day's status "
+                "yourself. Just state in a line or two what you checked "
+                "this trip against (the physical-presence/attendance "
+                "requirement and the re-entry signature's validity), "
+                "citing the relevant policy excerpt, then close with one "
+                "line confirming the trip works, mentioning the "
+                "hard_deadline date if it's set. Never open with that "
+                "verdict."
             )
         else:
             instructions.append(
-                "Attendance is NOT compliant — do not escalate yet and do not "
-                "call confirm_escalation on your own initiative. Lead with a "
-                "bulleted list of the relevant facts from `days`: the "
-                "specific conflicting dates and course/assignment names "
-                "(status 'conflict'), plus any days that are safe because of "
-                "a flagged remote session, the same way you would for a "
-                "compliant trip. Only after the bullets, close with one line "
-                "stating the trip does not work as requested — never open "
-                "with that verdict."
+                "Attendance is NOT compliant — do not escalate yet and do "
+                "not call confirm_escalation on your own initiative. Keep "
+                "this brief — the calendar visual shown alongside your "
+                "reply already gives the day-by-day breakdown and lists "
+                "the specific conflicting dates/courses, so do NOT re-list "
+                "each day or every conflict yourself. Just state in a line "
+                "or two what you checked this trip against (the physical-"
+                "presence/attendance requirement and the re-entry "
+                "signature's validity), citing the relevant policy "
+                "excerpt, then close with one line stating the trip does "
+                "not work as requested. Never open with that verdict."
             )
             if evaluation.attendance.recommended_return_date:
                 instructions.append(
@@ -291,7 +304,7 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
             )
         tool_result["instruction"] = " ".join(instructions)
 
-        return tool_result, False, _trip_visual(departure, return_date, evaluation)
+        return tool_result, False, _trip_visual(departure, return_date, evaluation, record["courses"])
 
     if name == "confirm_escalation":
         record = execute_confirm_escalation(student_id, tool_input)
@@ -328,7 +341,7 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
                 "above. If an attendance exception is part of it, be clear "
                 "that ISTO decides whether to grant it, not this assistant."
             )
-            return tool_result, True, _trip_visual(departure, return_date, evaluation)
+            return tool_result, True, _trip_visual(departure, return_date, evaluation, record["courses"])
 
         # Re-check came back clean (e.g. the dates changed since the student
         # first asked) — nothing to file after all.
@@ -336,7 +349,20 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
             "On re-check, this trip is fully compliant and the signature is "
             "valid — let the student know no case is needed after all."
         )
-        return tool_result, False, _trip_visual(departure, return_date, evaluation)
+        return tool_result, False, _trip_visual(departure, return_date, evaluation, record["courses"])
+
+    if name == "list_my_courses":
+        record = execute_list_my_courses(student_id, tool_input)
+        tool_result = {
+            "courses": record["courses"],
+            "instruction": (
+                "Present these as a short bulleted list of course names "
+                "(you can mention delivery mode too) and ask which one "
+                "they'd like to drop. Do not call check_course_drop_impact "
+                "until they name one."
+            ),
+        }
+        return tool_result, False, {"type": "course_list", "courses": record["courses"]}
 
     if name == "check_course_drop_impact":
         record = execute_check_course_drop_impact(student_id, tool_input)
