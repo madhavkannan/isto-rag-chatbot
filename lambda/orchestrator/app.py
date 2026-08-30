@@ -175,14 +175,30 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         summary = escalation.summarize_record(record)
         tool_result = {
             **record,
+            "course_hours_this_week": summary.course_hours_this_week,
+            "total_hours_used_this_week": summary.total_hours_used,
             "work_hours_remaining": summary.work_hours_remaining,
+            "over_cap_by": summary.over_cap_by,
             "course_load_meets_minimum": summary.course_load_meets_minimum,
+            "instruction": (
+                "Break the answer into a short bulleted list: each course "
+                "and its hours this week, then hours already worked, then "
+                "the total against the cap. Use the precomputed totals "
+                "above rather than adding the numbers yourself. If "
+                "over_cap_by is greater than 0, say explicitly how many "
+                "hours over the cap the student already is — don't just "
+                "say 'at your limit', since they're actually past it."
+            ),
         }
         visual = {
             "type": "work_hours",
             "cap": record["work_hour_cap_weekly"],
-            "logged": record["hours_logged_this_week"],
+            "courses": record["courses"],
+            "workHours": summary.work_hours_logged,
+            "courseHours": summary.course_hours_this_week,
+            "total": summary.total_hours_used,
             "remaining": summary.work_hours_remaining,
+            "overBy": summary.over_cap_by,
         }
         return tool_result, False, visual
 

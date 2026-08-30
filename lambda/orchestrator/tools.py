@@ -40,13 +40,16 @@ TOOL_SPECS = [
             "name": "get_student_record",
             "description": (
                 "Fetch the authenticated student's own SIS record: course "
-                "load, minimum required credits, re-entry endorsement "
-                "expiry, weekly work-hour cap, and hours already logged "
-                "this week. Always scoped to the caller — it cannot be "
-                "used to look up any other student. Use this for anything "
-                "that isn't a travel/endorsement question (e.g. work-hour "
-                "headroom); for travel questions use "
-                "check_travel_eligibility instead once you have both dates."
+                "load credits, minimum required credits, re-entry "
+                "endorsement expiry, this week's course schedule (name and "
+                "contact hours per course), the combined weekly hour cap, "
+                "and work hours already logged this week. Always scoped to "
+                "the caller — it cannot be used to look up any other "
+                "student. Use this for anything that isn't a travel/"
+                "endorsement question (e.g. work-hour headroom, which "
+                "depends on both course hours and hours already worked); "
+                "for travel questions use check_travel_eligibility instead "
+                "once you have both dates."
             ),
             "inputSchema": {
                 "json": {
@@ -129,6 +132,14 @@ def execute_get_student_record(student_id: str, _tool_input: dict) -> dict:
         "endorsement_expiry": record["endorsement_expiry"],
         "work_hour_cap_weekly": int(record["work_hour_cap_weekly"]),
         "hours_logged_this_week": int(record["hours_logged_this_week"]),
+        # Each course's actual contact hours for the current week, not a
+        # flat credit-based average — see escalation.py's summarize_record
+        # for why that distinction matters (fortnightly classes, etc.).
+        # DynamoDB numbers come back as Decimal; cast to int for JSON.
+        "courses": [
+            {"name": c["name"], "hours_this_week": int(c["hours_this_week"])}
+            for c in record.get("courses", [])
+        ],
     }
 
 

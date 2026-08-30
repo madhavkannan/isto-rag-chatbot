@@ -9,13 +9,33 @@ from dataclasses import dataclass
 
 @dataclass
 class RecordSummary:
+    course_hours_this_week: int
+    work_hours_logged: int
+    total_hours_used: int
     work_hours_remaining: int
+    over_cap_by: int
     course_load_meets_minimum: bool
 
 
 def summarize_record(record: dict) -> RecordSummary:
+    # The weekly cap is on combined course contact hours + on-campus work
+    # hours, not work hours alone — course_load_credits (an academic-credit
+    # count, used elsewhere for the minimum-credit check) isn't a hours
+    # figure, so it doesn't belong in this sum. "courses" carries each
+    # course's actual contact hours *for this week* instead, since a
+    # fortnightly class's hours aren't the same every week — using a flat
+    # per-credit average would misreport compliance on an off week.
+    course_hours = sum(c["hours_this_week"] for c in record.get("courses", []))
+    work_hours = record["hours_logged_this_week"]
+    total = course_hours + work_hours
+    cap = record["work_hour_cap_weekly"]
+
     return RecordSummary(
-        work_hours_remaining=max(0, record["work_hour_cap_weekly"] - record["hours_logged_this_week"]),
+        course_hours_this_week=course_hours,
+        work_hours_logged=work_hours,
+        total_hours_used=total,
+        work_hours_remaining=max(0, cap - total),
+        over_cap_by=max(0, total - cap),
         course_load_meets_minimum=record["course_load_credits"] >= record["min_required_credits"],
     )
 

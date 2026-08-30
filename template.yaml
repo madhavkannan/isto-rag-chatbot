@@ -343,6 +343,14 @@ Resources:
         endorsement_expiry: "2027-06-30"
         work_hour_cap_weekly: 20
         hours_logged_this_week: 12
+        # Contact hours for THIS week specifically, not a flat per-credit
+        # average — a fortnightly lab's hours aren't the same every week,
+        # and the weekly hour cap needs the real number to stay accurate.
+        courses:
+          - name: Microeconomics 201
+            hours_this_week: 3
+          - name: Data Structures Lab
+            hours_this_week: 3
       UserBUsername: userb
       UserBPassword: !Ref TestUserBPassword
       UserBRecord:
@@ -351,6 +359,11 @@ Resources:
         endorsement_expiry: "2026-01-15"
         work_hour_cap_weekly: 20
         hours_logged_this_week: 20
+        courses:
+          - name: Organic Chemistry Lecture
+            hours_this_week: 4
+          - name: Organic Chemistry Lab (fortnightly — meets this week)
+            hours_this_week: 3
 
   # ---------------------------------------------------------------------
   # Custom resource: create the KB index and load synthetic policy docs
