@@ -18,6 +18,11 @@ const DEMO_PASSWORDS = {
   userb: "MeridianDemo!2026B",
 };
 
+const DISPLAY_NAMES = {
+  usera: "User A",
+  userb: "User B",
+};
+
 const el = (id) => document.getElementById(id);
 
 el("login-btn").addEventListener("click", onLogin);
@@ -70,7 +75,7 @@ async function onLogin() {
     history = [];
     el("chat-window").innerHTML = "";
     el("starter-prompts").classList.remove("hidden");
-    el("session-label").innerHTML = `Signed in as <strong>${username}</strong>`;
+    el("session-label").innerHTML = `Signed in as <strong>${DISPLAY_NAMES[username] || username}</strong>`;
     el("login-panel").classList.add("hidden");
     el("chat-panel").classList.remove("hidden");
   } catch (err) {
@@ -218,8 +223,11 @@ function renderFormattedText(text) {
 }
 
 function renderInline(str) {
-  const escaped = str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  return escapeHtml(str).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function appendTypingIndicator() {
@@ -253,33 +261,67 @@ function renderVisual(visual) {
 }
 
 function renderHoursVisual(visual) {
-  const atCap = visual.remaining <= 0;
-  const pct = visual.cap > 0 ? Math.max(0, Math.min(100, (visual.logged / visual.cap) * 100)) : 0;
+  const cap = visual.cap;
+  const total = visual.total;
+  const overBy = visual.overBy || 0;
+  const atCapOrOver = visual.remaining <= 0;
+
+  // Segment widths as a share of the cap. If the total exceeds the cap,
+  // scale both segments down proportionally so they still sum to exactly
+  // 100% of the bar (their ratio to each other is preserved either way) —
+  // the actual numbers in the header and caption carry the overage, not
+  // the bar spilling past its own edge.
+  const scale = total > cap && total > 0 ? cap / total : 1;
+  const coursePct = cap > 0 ? Math.max(0, ((visual.courseHours * scale) / cap) * 100) : 0;
+  const workPct = cap > 0 ? Math.max(0, ((visual.workHours * scale) / cap) * 100) : 0;
 
   const container = document.createElement("div");
   container.className = "visual meter-visual";
 
   const row = document.createElement("div");
   row.className = "visual-row";
-  row.innerHTML = `<span class="visual-label">Weekly work hours</span><span class="visual-value">${visual.logged} / ${visual.cap} hrs</span>`;
+  row.innerHTML = `<span class="visual-label">Weekly hours</span><span class="visual-value">${total} / ${cap} hrs</span>`;
   container.appendChild(row);
 
   const track = document.createElement("div");
-  track.className = "meter-track" + (atCap ? " warn" : "");
-  const fill = document.createElement("div");
-  fill.className = "meter-fill" + (atCap ? " warn" : "");
-  fill.style.width = `${pct}%`;
-  track.appendChild(fill);
+  track.className = "meter-track" + (atCapOrOver ? " warn" : "");
+  const courseFill = document.createElement("div");
+  courseFill.className = "meter-fill course";
+  courseFill.style.width = `${coursePct}%`;
+  const workFill = document.createElement("div");
+  workFill.className = "meter-fill work";
+  workFill.style.width = `${workPct}%`;
+  track.appendChild(courseFill);
+  track.appendChild(workFill);
   container.appendChild(track);
 
+  const breakdown = document.createElement("div");
+  breakdown.className = "hours-breakdown";
+  for (const course of visual.courses || []) {
+    breakdown.appendChild(makeHoursRow("course", course.name, course.hours_this_week));
+  }
+  breakdown.appendChild(makeHoursRow("work", "Worked this week", visual.workHours));
+  container.appendChild(breakdown);
+
   const caption = document.createElement("div");
-  caption.className = "visual-caption" + (atCap ? " warn" : "");
-  caption.textContent = atCap
-    ? "At your weekly limit — resets next week"
-    : `${visual.remaining} hour${visual.remaining === 1 ? "" : "s"} remaining this week`;
+  caption.className = "visual-caption" + (atCapOrOver ? " warn" : "");
+  if (overBy > 0) {
+    caption.textContent = `${overBy} hour${overBy === 1 ? "" : "s"} over your ${cap}-hour weekly cap`;
+  } else if (atCapOrOver) {
+    caption.textContent = "At your weekly limit — resets next week";
+  } else {
+    caption.textContent = `${visual.remaining} hour${visual.remaining === 1 ? "" : "s"} remaining this week`;
+  }
   container.appendChild(caption);
 
   return container;
+}
+
+function makeHoursRow(kind, label, hours) {
+  const row = document.createElement("div");
+  row.className = "hours-row";
+  row.innerHTML = `<span class="hours-dot ${kind}"></span><span class="hours-row-label">${escapeHtml(label)}</span><span class="hours-row-value">${hours} hr${hours === 1 ? "" : "s"}</span>`;
+  return row;
 }
 
 function renderTravelVisual(visual) {
