@@ -162,7 +162,7 @@ function appendMessage(role, text, escalated, visual) {
   div.appendChild(body);
 
   if (visual) {
-    const rendered = renderVisual(visual);
+    const rendered = renderVisual(visual, escalated);
     if (rendered) div.appendChild(rendered);
   }
 
@@ -254,11 +254,31 @@ function appendTypingIndicator() {
 // turn (see lambda/orchestrator/app.py's `visual` field) so these render
 // actual data rather than parsing it back out of the model's prose.
 
-function renderVisual(visual) {
-  if (visual.type === "trip_attendance") return renderTripAttendanceVisual(visual);
+function renderVisual(visual, escalated) {
+  if (visual.type === "trip_attendance") return renderTripAttendanceVisual(visual, escalated);
   if (visual.type === "course_drop") return renderCourseDropVisual(visual);
   if (visual.type === "rcl_ticket") return renderRclTicketVisual(visual);
+  if (visual.type === "course_list") return renderCourseListVisual(visual);
   return null;
+}
+
+function renderCourseListVisual(visual) {
+  const container = document.createElement("div");
+  container.className = "visual course-list-visual";
+
+  const label = document.createElement("div");
+  label.className = "visual-label";
+  label.textContent = "Your courses";
+  container.appendChild(label);
+
+  const list = document.createElement("div");
+  list.className = "course-mode-list";
+  for (const course of visual.courses) {
+    list.appendChild(makeCourseModeRow(course.name, course.delivery_mode));
+  }
+  container.appendChild(list);
+
+  return container;
 }
 
 function renderCourseDropVisual(visual) {
@@ -364,7 +384,18 @@ function renderRclTicketVisual(visual) {
   return container;
 }
 
-function renderTripAttendanceVisual(visual) {
+function makeCourseModeRow(name, deliveryMode) {
+  const row = document.createElement("div");
+  row.className = "course-mode-row";
+  const badgeClass = deliveryMode === "in_person" ? "in-person" : deliveryMode === "hybrid" ? "hybrid" : "online";
+  const badgeLabel = deliveryMode === "in_person" ? "In-person" : deliveryMode === "hybrid" ? "Hybrid" : "Online";
+  row.innerHTML =
+    `<span class="course-mode-name">${escapeHtml(name)}</span>` +
+    `<span class="course-mode-badge ${badgeClass}">${badgeLabel}</span>`;
+  return row;
+}
+
+function renderTripAttendanceVisual(visual, escalated) {
   const container = document.createElement("div");
   container.className = "visual trip-visual";
 
@@ -372,6 +403,15 @@ function renderTripAttendanceVisual(visual) {
   label.className = "visual-label";
   label.textContent = "Trip attendance check";
   container.appendChild(label);
+
+  if (visual.courseModes && visual.courseModes.length) {
+    const modeList = document.createElement("div");
+    modeList.className = "course-mode-list";
+    for (const course of visual.courseModes) {
+      modeList.appendChild(makeCourseModeRow(course.name, course.deliveryMode));
+    }
+    container.appendChild(modeList);
+  }
 
   const strip = document.createElement("div");
   strip.className = "calendar-strip";
@@ -422,16 +462,23 @@ function renderTripAttendanceVisual(visual) {
   }
 
   const sig = visual.signature;
-  const doc = document.createElement("div");
-  doc.className = "doc-status";
   const sigOk = sig.status === "ok";
-  const sigText = sigOk
-    ? `Re-entry signature valid through ${formatDate(sig.expiry)}`
-    : sig.status === "expired"
-      ? `Re-entry signature expired ${formatDate(sig.expiry)} — a new case is needed either way`
-      : `Re-entry signature expires ${formatDate(sig.expiry)} (within 30 days) — a new case is recommended`;
-  doc.innerHTML = `<span class="doc-dot ${sigOk ? "ok" : "bad"}"></span>${escapeHtml(sigText)}`;
-  container.appendChild(doc);
+  // Once a case is actually filed (escalated), the model's own reply
+  // already explains the signature reason when that's part of why — the
+  // "a new case is needed" framing here would just repeat it. Only show
+  // this on an escalated message when the signature is fine, since that's
+  // still useful context and isn't said anywhere else.
+  if (!escalated || sigOk) {
+    const doc = document.createElement("div");
+    doc.className = "doc-status";
+    const sigText = sigOk
+      ? `Re-entry signature valid through ${formatDate(sig.expiry)}`
+      : sig.status === "expired"
+        ? `Re-entry signature expired ${formatDate(sig.expiry)} — a new case is needed either way`
+        : `Re-entry signature expires ${formatDate(sig.expiry)} (within 30 days) — a new case is recommended`;
+    doc.innerHTML = `<span class="doc-dot ${sigOk ? "ok" : "bad"}"></span>${escapeHtml(sigText)}`;
+    container.appendChild(doc);
+  }
 
   return container;
 }

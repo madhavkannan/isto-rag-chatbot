@@ -2,8 +2,9 @@
 Tool definitions and executors for two independent flows, each split into
 a read-only check and a confirm-after-agreement action:
   - Story 1 (travel): check_travel_eligibility / confirm_escalation.
-  - Story 2 (course drop / Medical RCL): check_course_drop_impact /
-    file_rcl_escalation.
+  - Story 2 (course drop / Medical RCL): list_my_courses (when the
+    student doesn't know which course to drop) / check_course_drop_impact
+    / file_rcl_escalation.
 
 Security boundary (Story 3): none of the schemas below take a student
 identifier. The model cannot pass one in, strict-schema validation on the
@@ -32,6 +33,27 @@ _DATE_FIELD = {
 }
 
 TOOL_SPECS = [
+    {
+        "toolSpec": {
+            "name": "list_my_courses",
+            "description": (
+                "List the authenticated student's own enrolled courses "
+                "(name and delivery mode). Call this when the student "
+                "wants to drop a course but hasn't said which one, or "
+                "says they don't know/remember their course list — never "
+                "guess a course name yourself. Always scoped to the "
+                "caller; cannot look up any other student."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                }
+            },
+            "strict": True,
+        }
+    },
     {
         "toolSpec": {
             "name": "check_course_drop_impact",
@@ -190,6 +212,15 @@ def _find_course(record: dict, course_name: str) -> dict | None:
         if name == target or target in name or name in target:
             return c
     return None
+
+
+def execute_list_my_courses(student_id: str, _tool_input: dict) -> dict:
+    record = _fetch_record(student_id)
+    return {
+        "courses": [
+            {"name": c["name"], "delivery_mode": c.get("delivery_mode")} for c in record.get("courses", [])
+        ]
+    }
 
 
 def execute_check_travel_eligibility(student_id: str, tool_input: dict) -> dict:
