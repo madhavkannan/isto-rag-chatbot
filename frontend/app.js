@@ -361,10 +361,15 @@ function renderTripAttendanceVisual(visual) {
     container.appendChild(list);
   }
 
-  const caption = document.createElement("div");
-  caption.className = "visual-caption" + (visual.compliant ? "" : " warn");
-  caption.textContent = buildTripCaption(visual);
-  container.appendChild(caption);
+  const captionList = document.createElement("ul");
+  captionList.className = "caption-list";
+  for (const part of buildTripCaptionParts(visual)) {
+    const li = document.createElement("li");
+    li.className = "caption-item" + (part.warn ? " warn" : "");
+    li.textContent = part.text;
+    captionList.appendChild(li);
+  }
+  container.appendChild(captionList);
 
   if (visual.recommendedReturn) {
     const rec = document.createElement("div");
@@ -391,27 +396,30 @@ function renderTripAttendanceVisual(visual) {
   return container;
 }
 
-function buildTripCaption(visual) {
+function buildTripCaptionParts(visual) {
   const parts = [];
   const breakDays = visual.days.filter((d) => d.status === "break");
   if (breakDays.length) {
     const label = breakDays[0].label;
     const first = formatDate(breakDays[0].date);
     const last = formatDate(breakDays[breakDays.length - 1].date);
-    parts.push(breakDays.length > 1 ? `${first}–${last} ${label}` : `${first} ${label}`);
+    parts.push({ text: breakDays.length > 1 ? `${first}–${last} ${label}` : `${first} ${label}` });
   }
   for (const day of visual.days) {
     if (day.status === "safe" && day.label) {
-      parts.push(`${formatDate(day.date)} ${day.label}`);
+      parts.push({ text: `${formatDate(day.date)} ${day.label}` });
     }
   }
   if (visual.compliant && visual.hardDeadline) {
-    parts.push(`back by ${formatDate(visual.hardDeadline)} for your next required session`);
+    parts.push({ text: `Back by ${formatDate(visual.hardDeadline)} for your next required session` });
   } else if (!visual.compliant) {
     const n = visual.days.filter((d) => d.status === "conflict").length;
-    parts.push(`${n} mandatory in-person session${n === 1 ? "" : "s"} conflict${n === 1 ? "s" : ""} with this trip`);
+    parts.push({
+      text: `${n} mandatory in-person session${n === 1 ? "" : "s"} conflict${n === 1 ? "s" : ""} with this trip`,
+      warn: true,
+    });
   }
-  return parts.join(" · ");
+  return parts;
 }
 
 function makeDayChip(day) {

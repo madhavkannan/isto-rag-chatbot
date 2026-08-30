@@ -541,6 +541,42 @@ button:active {
   border: 1px dashed #5d7a63;
 }
 
+.caption-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.caption-item {
+  position: relative;
+  padding-left: 13px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.caption-item::before {
+  content: "";
+  position: absolute;
+  left: 1px;
+  top: 6px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.caption-item.warn {
+  color: var(--escalated-text);
+  font-weight: 500;
+}
+
+.caption-item.warn::before {
+  background: var(--escalated-text);
+}
+
 .conflict-list {
   display: flex;
   flex-direction: column;

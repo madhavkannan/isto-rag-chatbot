@@ -239,20 +239,25 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
         instructions = []
         if evaluation.attendance.compliant:
             instructions.append(
-                "Attendance is fully compliant. Confirm the trip works, briefly "
-                "explain why using the break/remote-session reasons in `days` "
-                "(entries with status 'break' or a 'label' explaining why a day "
-                "is safe), and if hard_deadline is set, state that exact date as "
-                "when they must be back for a required in-person session."
+                "Attendance is fully compliant. Lead with a bulleted list of "
+                "the relevant facts using the break/remote-session reasons in "
+                "`days` (entries with status 'break' or a 'label' explaining "
+                "why a day is safe), including the hard_deadline date as one "
+                "of the bullets if it's set. Only after the bullets, close "
+                "with one line confirming the trip works — never open with "
+                "that verdict."
             )
         else:
             instructions.append(
                 "Attendance is NOT compliant — do not escalate yet and do not "
-                "call confirm_escalation on your own initiative. List the "
-                "specific conflicting dates and course/assignment names from "
-                "`days` (entries with status 'conflict'), and also call out any "
-                "days that are safe because of a flagged remote session, the "
-                "same way you would for a compliant trip."
+                "call confirm_escalation on your own initiative. Lead with a "
+                "bulleted list of the relevant facts from `days`: the "
+                "specific conflicting dates and course/assignment names "
+                "(status 'conflict'), plus any days that are safe because of "
+                "a flagged remote session, the same way you would for a "
+                "compliant trip. Only after the bullets, close with one line "
+                "stating the trip does not work as requested — never open "
+                "with that verdict."
             )
             if evaluation.attendance.recommended_return_date:
                 instructions.append(
