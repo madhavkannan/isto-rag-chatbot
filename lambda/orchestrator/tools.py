@@ -1,10 +1,11 @@
 """
-Tool definitions and executors: get_student_record (general lookup, no
-params), check_travel_eligibility (Story 1, requires both travel dates,
-read-only — never files an escalation itself), and confirm_escalation
-(files the escalation, only after the student has explicitly agreed).
+Tool definitions and executors for two independent flows, each split into
+a read-only check and a confirm-after-agreement action:
+  - Story 1 (travel): check_travel_eligibility / confirm_escalation.
+  - Story 2 (course drop / Medical RCL): check_course_drop_impact /
+    file_rcl_escalation.
 
-Security boundary (Story 3): neither schema below takes a student
+Security boundary (Story 3): none of the schemas below take a student
 identifier. The model cannot pass one in, strict-schema validation on the
 Converse API rejects any attempt to add one, and the execute_* functions
 below only ever accept the student_id that the Lambda handler already
@@ -12,14 +13,10 @@ resolved from the verified Cognito JWT — never from model output or from the
 raw user message. There is no parameter, and no code path, through which a
 different student's id could reach these functions.
 
-check_travel_eligibility requires both travel dates rather than taking them
-as optional fields on get_student_record: with strict:true, every property
-must be listed as required (strict mode has no true "optional" field — an
-unlisted-but-present optional property is not a valid strict schema), and a
-travel-specific tool the model literally cannot invoke before it has both
-dates is a real structural guarantee, not just a system-prompt request to
-wait for them. Splitting it out also keeps get_student_record usable
-unmodified for Story 2 (work hours), which has no travel dates at all.
+Every tool requires all of its fields rather than treating any as
+optional: with strict:true, every property must be listed as required
+(strict mode has no true "optional" field — an unlisted-but-present
+optional property is not a valid strict schema).
 """
 import boto3
 import os
@@ -37,23 +34,26 @@ _DATE_FIELD = {
 TOOL_SPECS = [
     {
         "toolSpec": {
-            "name": "get_student_record",
+            "name": "check_course_drop_impact",
             "description": (
-                "Fetch the authenticated student's own SIS record: total "
-                "enrolled credits, the minimum full-time credit threshold, "
-                "this week's course schedule (name and contact hours per "
-                "course), the combined weekly hour cap, and work hours "
-                "already logged this week. Always scoped to the caller — "
-                "it cannot be used to look up any other student. Use this "
-                "for anything that isn't a travel/endorsement question "
-                "(e.g. work-hour headroom, which depends on both course "
-                "hours and hours already worked); for travel questions use "
-                "check_travel_eligibility instead once you have both dates."
+                "Check whether dropping a specific course from the "
+                "authenticated student's own schedule would violate their "
+                "minimum full-time credit or physical-presence credit "
+                "requirement. Read-only — never files anything by itself, "
+                "even if the drop would violate a minimum. If it would, "
+                "returns real alternative courses from the student's own "
+                "schedule data for you to suggest before any escalation."
             ),
             "inputSchema": {
                 "json": {
                     "type": "object",
-                    "properties": {},
+                    "properties": {
+                        "course_name": {
+                            "type": "string",
+                            "description": "The course the student wants to drop, as they referred to it.",
+                        },
+                    },
+                    "required": ["course_name"],
                     "additionalProperties": False,
                 }
             },
@@ -112,6 +112,36 @@ TOOL_SPECS = [
             "strict": True,
         }
     },
+    {
+        "toolSpec": {
+            "name": "file_rcl_escalation",
+            "description": (
+                "File an urgent Medical Reduced Course Load (RCL) "
+                "escalation ticket with a human International Student "
+                "Advisor, for a course drop that check_course_drop_impact "
+                "already found would violate a minimum. Only call this "
+                "after the student has explicitly agreed to escalate — "
+                "never speculatively or immediately after "
+                "check_course_drop_impact on its own. Re-checks the same "
+                "course itself before filing, so it's safe even if called "
+                "out of order."
+            ),
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "course_name": {
+                            "type": "string",
+                            "description": "The course being dropped, matching what was checked earlier.",
+                        },
+                    },
+                    "required": ["course_name"],
+                    "additionalProperties": False,
+                }
+            },
+            "strict": True,
+        }
+    },
 ]
 
 
@@ -126,27 +156,40 @@ def _fetch_record(student_id: str) -> dict:
 def _normalize_course(c: dict) -> dict:
     # DynamoDB numbers come back as Decimal; cast to int for JSON. Schedule
     # fields (delivery_mode/meeting_days/session_dates/remote_session_dates)
-    # only matter for the Story 1 travel tools below — Story 2 (work hours)
-    # only ever reads name/hours_this_week and ignores the rest.
+    # only matter for the Story 1 travel tools; credits/alternative_courses
+    # only matter for the Story 2 course-drop tools below — every course
+    # carries all of them regardless, since a course can appear in either
+    # narrative (e.g. User B's Organic Chemistry Lecture is both the Story 1
+    # travel conflict and the Story 2 drop target).
     return {
         "name": c["name"],
-        "hours_this_week": int(c["hours_this_week"]),
         "delivery_mode": c.get("delivery_mode"),
         "meeting_days": list(c.get("meeting_days", [])),
         "session_dates": list(c.get("session_dates", [])),
         "remote_session_dates": list(c.get("remote_session_dates", [])),
+        "credits": int(c.get("credits", 0)),
+        "alternative_courses": [
+            {
+                "name": a["name"],
+                "delivery_mode": a.get("delivery_mode"),
+                "credits": int(a.get("credits", 0)),
+            }
+            for a in c.get("alternative_courses", [])
+        ],
     }
 
 
-def execute_get_student_record(student_id: str, _tool_input: dict) -> dict:
-    record = _fetch_record(student_id)
-    return {
-        "C_total": int(record["C_total"]),
-        "M": int(record["M"]),
-        "work_hour_cap_weekly": int(record["work_hour_cap_weekly"]),
-        "hours_logged_this_week": int(record["hours_logged_this_week"]),
-        "courses": [_normalize_course(c) for c in record.get("courses", [])],
-    }
+def _find_course(record: dict, course_name: str) -> dict | None:
+    # Simple case-insensitive/substring match rather than requiring an
+    # exact string — the model passes whatever the student called the
+    # course by, which won't always be a byte-for-byte match against the
+    # SIS record's canonical name.
+    target = course_name.strip().lower()
+    for c in record.get("courses", []):
+        name = c["name"].lower()
+        if name == target or target in name or name in target:
+            return c
+    return None
 
 
 def execute_check_travel_eligibility(student_id: str, tool_input: dict) -> dict:
@@ -176,3 +219,24 @@ def execute_confirm_escalation(student_id: str, tool_input: dict) -> dict:
     # out of order, or with different (e.g. shortened) dates than the
     # original check.
     return execute_check_travel_eligibility(student_id, tool_input)
+
+
+def execute_check_course_drop_impact(student_id: str, tool_input: dict) -> dict:
+    record = _fetch_record(student_id)
+    course = _find_course(record, tool_input["course_name"])
+    if course is None:
+        return {
+            "error": "course_not_found",
+            "available_courses": [c["name"] for c in record.get("courses", [])],
+        }
+    return {
+        "C_total": int(record["C_total"]),
+        "C_inperson": int(record["C_inperson"]),
+        "M": int(record["M"]),
+        "course": _normalize_course(course),
+    }
+
+
+def execute_file_rcl_escalation(student_id: str, tool_input: dict) -> dict:
+    # Same re-derive-from-scratch pattern as execute_confirm_escalation.
+    return execute_check_course_drop_impact(student_id, tool_input)

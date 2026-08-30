@@ -350,28 +350,28 @@ Resources:
         # 182 for OPT) rather than stored flat, per Rule 3.
         travel_signature_date: "2026-06-15"
         visa_status: F1
-        work_hour_cap_weekly: 20
-        hours_logged_this_week: 12
         academic_calendar:
           - start: "2026-10-05"
             end: "2026-10-09"
             label: Semester Break
-        # Contact hours for THIS week specifically, not a flat per-credit
-        # average — a fortnightly lab's hours aren't the same every week,
-        # and both the weekly hour cap (Story 2) and the day-by-day
-        # attendance check (Story 1) need the real number to stay accurate.
         courses:
           - name: Microeconomics 201
-            hours_this_week: 3
             delivery_mode: online
           - name: Data Structures Lab
-            hours_this_week: 3
             delivery_mode: hybrid
             meeting_days: [Tue, Thu]
             # This week's Tuesday session is an async reading module — the
             # Thursday session isn't flagged, so it still requires physical
             # presence.
             remote_session_dates: ["2026-10-13"]
+          # Story 2 (course drop / Medical RCL): dropping this brings A to
+          # C_total=12/M=12 and C_inperson=9/(M-3)=9 — exactly at both
+          # minimums, so the drop is compliant with zero room to spare. No
+          # meeting_days/session_dates on purpose — it's irrelevant to the
+          # Story 1 travel calendar and should never appear there.
+          - name: Statistics 210
+            delivery_mode: in_person
+            credits: 3
       UserBUsername: userb
       UserBPassword: !Ref TestUserBPassword
       UserBRecord:
@@ -385,28 +385,33 @@ Resources:
         # travel, independent of the attendance check below.
         travel_signature_date: "2025-01-15"
         visa_status: F1
-        work_hour_cap_weekly: 20
-        hours_logged_this_week: 20
         academic_calendar:
           - start: "2026-10-05"
             end: "2026-10-09"
             label: Semester Break
         courses:
+          # Story 2 (course drop / Medical RCL): B is already at both
+          # minimums with zero buffer (see C_total/C_inperson above), so
+          # dropping this 4-credit in-person course fails BOTH counts —
+          # C_total 12->8 (needs 12), C_inperson 9->5 (needs 9). Also the
+          # Story 1 travel conflict course, unchanged.
           - name: Organic Chemistry Lecture
-            hours_this_week: 4
             delivery_mode: in_person
             meeting_days: [Wed, Fri]
+            credits: 4
+            alternative_courses:
+              - name: General Chemistry Survey
+                delivery_mode: in_person
+                credits: 4
+              - name: Intro to Biochemistry
+                delivery_mode: online
+                credits: 4
           - name: Organic Chemistry Lab
-            hours_this_week: 3
             delivery_mode: hybrid
             # Fortnightly — meets on specific dates rather than every week,
             # so an explicit date list, not a weekly recurrence.
             session_dates: ["2026-10-15"]
           - name: Organic Chemistry Recitation
-            # 0 contact hours this week (not 0 in general) — this week's
-            # session is the flagged-remote one below, so there's nothing
-            # to count toward the work-hour cap for it this particular week.
-            hours_this_week: 0
             delivery_mode: hybrid
             meeting_days: [Tue]
             remote_session_dates: ["2026-10-13"]

@@ -14,6 +14,14 @@ data, not a single flat "endorsement expiry" comparison:
     against the trip's return date.
 A trip can fail Rule 2 while Rule 3 is fine, or the reverse, or both at
 once — they're reported separately, never collapsed into one flag.
+
+Story 2 (course drop) reuses Rule 1's same two minimums to evaluate a
+hypothetical: what would this student's standing look like if they
+dropped one specific course? A health/hardship reason for rejecting the
+suggested alternatives is inherently something no tool can verify — that
+part stays a model judgment call — but whether the drop itself is
+compliant, and what the real alternative courses are, is computed here,
+never asserted by the model.
 """
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -23,36 +31,6 @@ _SIGNATURE_VALIDITY_DAYS = {"OPT": 182}
 _DEFAULT_SIGNATURE_VALIDITY_DAYS = 365
 _WARNING_WINDOW_DAYS = 30
 _DEADLINE_SEARCH_WINDOW_DAYS = 60
-
-
-@dataclass
-class RecordSummary:
-    course_hours_this_week: int
-    work_hours_logged: int
-    total_hours_used: int
-    work_hours_remaining: int
-    over_cap_by: int
-    course_load_meets_minimum: bool
-
-
-def summarize_record(record: dict) -> RecordSummary:
-    # The weekly cap is on combined course contact hours + on-campus work
-    # hours. "courses" carries each course's actual contact hours *for this
-    # week* instead of a flat per-credit average, since a fortnightly
-    # class's hours aren't the same every week.
-    course_hours = sum(c["hours_this_week"] for c in record.get("courses", []))
-    work_hours = record["hours_logged_this_week"]
-    total = course_hours + work_hours
-    cap = record["work_hour_cap_weekly"]
-
-    return RecordSummary(
-        course_hours_this_week=course_hours,
-        work_hours_logged=work_hours,
-        total_hours_used=total,
-        work_hours_remaining=max(0, cap - total),
-        over_cap_by=max(0, total - cap),
-        course_load_meets_minimum=record["C_total"] >= record["M"],
-    )
 
 
 # ---------------------------------------------------------------------
@@ -230,4 +208,55 @@ def evaluate_travel(record: dict, departure: str, return_date: str) -> TravelEva
         enrollment=evaluate_enrollment(record),
         attendance=evaluate_attendance(record, departure, return_date),
         signature=evaluate_signature(record, return_date),
+    )
+
+
+# ---------------------------------------------------------------------
+# Story 2 — dropping a specific course against the same Rule 1 minimums
+# ---------------------------------------------------------------------
+@dataclass
+class CourseDropEvaluation:
+    course_name: str
+    credits: int
+    current_total: int
+    current_inperson: int
+    projected_total: int
+    projected_inperson: int
+    min_total: int
+    min_inperson: int
+    alternatives: list[dict]
+
+    @property
+    def meets_total_minimum(self) -> bool:
+        return self.projected_total >= self.min_total
+
+    @property
+    def meets_physical_presence_minimum(self) -> bool:
+        return self.projected_inperson >= self.min_inperson
+
+    @property
+    def compliant(self) -> bool:
+        return self.meets_total_minimum and self.meets_physical_presence_minimum
+
+
+def evaluate_course_drop(record: dict, course: dict) -> CourseDropEvaluation:
+    credits = course["credits"]
+    current_total = record["C_total"]
+    current_inperson = record["C_inperson"]
+
+    # Only in-person credits count against the physical-presence minimum —
+    # dropping an online/hybrid course still reduces C_total, but leaves
+    # C_inperson untouched.
+    inperson_credits = credits if course["delivery_mode"] == "in_person" else 0
+
+    return CourseDropEvaluation(
+        course_name=course["name"],
+        credits=credits,
+        current_total=current_total,
+        current_inperson=current_inperson,
+        projected_total=current_total - credits,
+        projected_inperson=current_inperson - inperson_credits,
+        min_total=record["M"],
+        min_inperson=record["M"] - 3,
+        alternatives=course.get("alternative_courses", []),
     )
