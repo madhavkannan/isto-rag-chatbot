@@ -91,13 +91,13 @@ async function onSend(e) {
 
     history.push({ role: "user", content: [{ text: message }] });
     history.push({ role: "assistant", content: [{ text: payload.reply }] });
-    appendMessage("assistant", payload.reply, payload.escalated);
+    appendMessage("assistant", payload.reply, payload.escalated, payload.visual);
   } catch (err) {
     showError(err.message);
   }
 }
 
-function appendMessage(role, text, escalated) {
+function appendMessage(role, text, escalated, visual) {
   const div = document.createElement("div");
   div.className = `msg ${role}${escalated ? " escalated" : ""}`;
 
@@ -120,8 +120,141 @@ function appendMessage(role, text, escalated) {
   body.textContent = text;
   div.appendChild(body);
 
+  if (visual) {
+    const rendered = renderVisual(visual);
+    if (rendered) div.appendChild(rendered);
+  }
+
   el("chat-window").appendChild(div);
   el("chat-window").scrollTop = el("chat-window").scrollHeight;
+}
+
+// --- Structured visuals -----------------------------------------------
+// The backend attaches real numbers behind whichever tool it called this
+// turn (see lambda/orchestrator/app.py's `visual` field) so these render
+// actual data rather than parsing it back out of the model's prose.
+
+function renderVisual(visual) {
+  if (visual.type === "work_hours") return renderHoursVisual(visual);
+  if (visual.type === "travel_coverage") return renderTravelVisual(visual);
+  return null;
+}
+
+function renderHoursVisual(visual) {
+  const atCap = visual.remaining <= 0;
+  const pct = visual.cap > 0 ? Math.max(0, Math.min(100, (visual.logged / visual.cap) * 100)) : 0;
+
+  const container = document.createElement("div");
+  container.className = "visual meter-visual";
+
+  const row = document.createElement("div");
+  row.className = "visual-row";
+  row.innerHTML = `<span class="visual-label">Weekly work hours</span><span class="visual-value">${visual.logged} / ${visual.cap} hrs</span>`;
+  container.appendChild(row);
+
+  const track = document.createElement("div");
+  track.className = "meter-track" + (atCap ? " warn" : "");
+  const fill = document.createElement("div");
+  fill.className = "meter-fill" + (atCap ? " warn" : "");
+  fill.style.width = `${pct}%`;
+  track.appendChild(fill);
+  container.appendChild(track);
+
+  const caption = document.createElement("div");
+  caption.className = "visual-caption" + (atCap ? " warn" : "");
+  caption.textContent = atCap
+    ? "At your weekly limit — resets next week"
+    : `${visual.remaining} hour${visual.remaining === 1 ? "" : "s"} remaining this week`;
+  container.appendChild(caption);
+
+  return container;
+}
+
+function renderTravelVisual(visual) {
+  const departure = new Date(`${visual.departure}T00:00:00Z`);
+  const returnDate = new Date(`${visual.return}T00:00:00Z`);
+  const expiry = new Date(`${visual.expiry}T00:00:00Z`);
+
+  const totalMs = returnDate - departure;
+  let splitPct;
+  if (totalMs <= 0) {
+    splitPct = expiry >= departure ? 100 : 0;
+  } else {
+    splitPct = Math.max(0, Math.min(100, ((expiry - departure) / totalMs) * 100));
+  }
+  const fullyCovered = splitPct >= 100;
+  const fullyUncovered = splitPct <= 0;
+
+  const container = document.createElement("div");
+  container.className = "visual timeline-visual";
+
+  const label = document.createElement("div");
+  label.className = "visual-label";
+  label.textContent = "Trip coverage";
+  container.appendChild(label);
+
+  const track = document.createElement("div");
+  track.className = "timeline-track";
+  if (fullyCovered) {
+    track.appendChild(makeTimelineSeg("safe", 0, 100));
+  } else if (fullyUncovered) {
+    track.appendChild(makeTimelineSeg("gap", 0, 100));
+  } else {
+    track.appendChild(makeTimelineSeg("safe", 0, splitPct));
+    track.appendChild(makeTimelineSeg("gap", splitPct, 100 - splitPct));
+    const tick = document.createElement("div");
+    tick.className = "timeline-tick";
+    tick.style.left = `${splitPct}%`;
+    track.appendChild(tick);
+  }
+  container.appendChild(track);
+
+  const ticks = document.createElement("div");
+  ticks.className = "timeline-ticks";
+  ticks.appendChild(makeTickmark("start", 0, formatDate(visual.departure), "Depart"));
+  if (!fullyCovered && !fullyUncovered) {
+    const labelPct = Math.max(14, Math.min(86, splitPct));
+    ticks.appendChild(makeTickmark("mid warn", labelPct, formatDate(visual.expiry), "Expires"));
+  }
+  ticks.appendChild(makeTickmark("end", 100, formatDate(visual.return), "Return"));
+  container.appendChild(ticks);
+
+  const caption = document.createElement("div");
+  caption.className = "visual-caption" + (fullyCovered ? "" : " warn");
+  if (fullyCovered) {
+    caption.textContent = `Endorsement valid through ${formatDate(visual.expiry)} — covers the whole trip`;
+  } else if (fullyUncovered) {
+    caption.textContent = `Endorsement expired ${formatDate(visual.expiry)} — not valid for any of this trip`;
+  } else {
+    caption.textContent = `Covered through ${formatDate(visual.expiry)}, then a gap until your return`;
+  }
+  container.appendChild(caption);
+
+  return container;
+}
+
+function makeTimelineSeg(kind, leftPct, widthPct) {
+  const seg = document.createElement("div");
+  seg.className = `timeline-seg ${kind}`;
+  seg.style.left = `${leftPct}%`;
+  seg.style.width = `${widthPct}%`;
+  return seg;
+}
+
+function makeTickmark(kind, pct, dateText, whatText) {
+  const mark = document.createElement("div");
+  mark.className = `timeline-tickmark ${kind}`;
+  mark.style.left = `${pct}%`;
+  mark.innerHTML = `<span class="date">${dateText}</span><span class="what">${whatText}</span>`;
+  return mark;
+}
+
+function formatDate(iso) {
+  return new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function showError(message) {
