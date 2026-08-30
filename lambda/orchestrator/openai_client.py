@@ -15,7 +15,7 @@ is wired up — only app.py's import line changes.
 Trade-off versus the Bedrock path: no Bedrock Guardrails layer (AWS-native
 content/PII filtering on the model call itself). The other three Story 3
 defenses are unaffected: guardrails.py's heuristic pre-filter, the system
-prompt, and get_student_record / check_travel_eligibility's tool schemas
+prompt, and every tool's schema
 (still no student-id parameter, still strict — strict tool-use is in fact
 a first-class, native OpenAI Chat Completions feature, not something
 stretched onto Bedrock).
