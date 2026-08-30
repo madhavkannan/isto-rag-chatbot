@@ -244,10 +244,12 @@ def evaluate_course_drop(record: dict, course: dict) -> CourseDropEvaluation:
     current_total = record["C_total"]
     current_inperson = record["C_inperson"]
 
-    # Only in-person credits count against the physical-presence minimum —
-    # dropping an online/hybrid course still reduces C_total, but leaves
-    # C_inperson untouched.
-    inperson_credits = credits if course["delivery_mode"] == "in_person" else 0
+    # Per policy ("no more than 3 credits of online coursework count
+    # toward the minimum"), only fully-online credits are excluded from
+    # the physical-presence minimum — hybrid still counts toward it, same
+    # as in-person. Dropping a purely online course reduces C_total but
+    # leaves C_inperson untouched.
+    inperson_credits = 0 if course["delivery_mode"] == "online" else credits
 
     return CourseDropEvaluation(
         course_name=course["name"],
