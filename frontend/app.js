@@ -46,7 +46,7 @@ async function onLogin() {
     currentUser = username;
     history = [];
     el("chat-window").innerHTML = "";
-    el("session-label").textContent = `Signed in as ${username}`;
+    el("session-label").innerHTML = `Signed in as <strong>${username}</strong>`;
     el("login-panel").classList.add("hidden");
     el("chat-panel").classList.remove("hidden");
   } catch (err) {
@@ -100,15 +100,26 @@ async function onSend(e) {
 function appendMessage(role, text, escalated) {
   const div = document.createElement("div");
   div.className = `msg ${role}${escalated ? " escalated" : ""}`;
-  if (escalated) {
-    const tag = document.createElement("div");
-    tag.className = "escalation-tag";
-    tag.textContent = "Escalated to ISTO";
-    div.appendChild(tag);
-  }
+
+  const isUser = role === "user";
+  const initial = isUser ? (currentUser || "?").slice(-1).toUpperCase() : "I";
+  const name = isUser ? "You" : escalated ? "ISTO Assistant · Escalated" : "ISTO Assistant";
+
+  const header = document.createElement("div");
+  header.className = "msg-header";
+  const avatar = document.createElement("span");
+  avatar.className = "avatar";
+  avatar.textContent = initial;
+  const label = document.createElement("span");
+  label.textContent = name;
+  header.appendChild(avatar);
+  header.appendChild(label);
+  div.appendChild(header);
+
   const body = document.createElement("div");
   body.textContent = text;
   div.appendChild(body);
+
   el("chat-window").appendChild(div);
   el("chat-window").scrollTop = el("chat-window").scrollHeight;
 }
