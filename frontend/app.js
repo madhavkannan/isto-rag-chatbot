@@ -8,17 +8,34 @@ let idToken = null;
 let currentUser = null;
 let history = [];
 
+// Demo-only credentials (CloudFormation TestUserAPassword/TestUserBPassword
+// defaults) — pre-filled purely so clicking through the demo doesn't need
+// retyping them each time. Not a real secret: this whole stack is a
+// throwaway fictional demo, and these are already documented in the
+// project's own README.
+const DEMO_PASSWORDS = {
+  usera: "MeridianDemo!2026A",
+  userb: "MeridianDemo!2026B",
+};
+
 const el = (id) => document.getElementById(id);
 
 el("login-btn").addEventListener("click", onLogin);
 el("logout-btn").addEventListener("click", onLogout);
 el("composer").addEventListener("submit", onSend);
+el("user-select").addEventListener("change", syncPasswordField);
 document.querySelectorAll(".starter-chip").forEach((btn) => {
   btn.addEventListener("click", () => {
     el("message-input").value = btn.dataset.prompt;
     el("composer").requestSubmit();
   });
 });
+
+syncPasswordField();
+
+function syncPasswordField() {
+  el("password-input").value = DEMO_PASSWORDS[el("user-select").value] || "";
+}
 
 async function onLogin() {
   clearError();
@@ -67,7 +84,7 @@ function onLogout() {
   idToken = null;
   currentUser = null;
   history = [];
-  el("password-input").value = "";
+  syncPasswordField();
   el("chat-panel").classList.add("hidden");
   el("login-panel").classList.remove("hidden");
 }
@@ -76,12 +93,16 @@ async function onSend(e) {
   e.preventDefault();
   clearError();
   const input = el("message-input");
+  const sendBtn = el("composer").querySelector('button[type="submit"]');
   const message = input.value.trim();
   if (!message) return;
 
   el("starter-prompts").classList.add("hidden");
   appendMessage("user", message, false);
   input.value = "";
+  input.disabled = true;
+  sendBtn.disabled = true;
+  const typingEl = appendTypingIndicator();
 
   try {
     const res = await fetch(`${cfg.apiUrl}/chat`, {
@@ -93,6 +114,7 @@ async function onSend(e) {
       body: JSON.stringify({ message, conversation_history: history }),
     });
     const payload = await res.json();
+    typingEl.remove();
     if (!res.ok) {
       throw new Error(payload.error || "Request failed");
     }
@@ -101,7 +123,12 @@ async function onSend(e) {
     history.push({ role: "assistant", content: [{ text: payload.reply }] });
     appendMessage("assistant", payload.reply, payload.escalated, payload.visual);
   } catch (err) {
+    typingEl.remove();
     showError(err.message);
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
   }
 }
 
@@ -125,7 +152,8 @@ function appendMessage(role, text, escalated, visual) {
   div.appendChild(header);
 
   const body = document.createElement("div");
-  body.textContent = text;
+  body.className = "msg-body";
+  body.appendChild(renderFormattedText(text));
   div.appendChild(body);
 
   if (visual) {
@@ -135,6 +163,82 @@ function appendMessage(role, text, escalated, visual) {
 
   el("chat-window").appendChild(div);
   el("chat-window").scrollTop = el("chat-window").scrollHeight;
+}
+
+// --- Lightweight markdown (bold + bullet lists only) -------------------
+// A small custom parser rather than a library: the model is asked to
+// prefer short bullet points over long paragraphs (see prompts.py), and
+// this is just enough to render that — and any **bold** — as real HTML
+// instead of literal asterisks and dashes.
+
+function renderFormattedText(text) {
+  const container = document.createElement("div");
+  const lines = text.split("\n");
+  let paragraphLines = [];
+  let currentList = null;
+
+  const flushParagraph = () => {
+    if (paragraphLines.length) {
+      const p = document.createElement("p");
+      p.innerHTML = renderInline(paragraphLines.join(" "));
+      container.appendChild(p);
+      paragraphLines = [];
+    }
+  };
+  const flushList = () => {
+    if (currentList) {
+      container.appendChild(currentList);
+      currentList = null;
+    }
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line === "") {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+    const bullet = line.match(/^[-*]\s+(.*)/);
+    if (bullet) {
+      flushParagraph();
+      if (!currentList) currentList = document.createElement("ul");
+      const li = document.createElement("li");
+      li.innerHTML = renderInline(bullet[1]);
+      currentList.appendChild(li);
+    } else {
+      flushList();
+      paragraphLines.push(line);
+    }
+  }
+  flushParagraph();
+  flushList();
+
+  return container;
+}
+
+function renderInline(str) {
+  const escaped = str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return escaped.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function appendTypingIndicator() {
+  const div = document.createElement("div");
+  div.className = "msg assistant typing";
+
+  const header = document.createElement("div");
+  header.className = "msg-header";
+  header.innerHTML = `<span class="avatar">I</span>ISTO Assistant`;
+  div.appendChild(header);
+
+  const dots = document.createElement("div");
+  dots.className = "typing-dots";
+  dots.innerHTML = "<span></span><span></span><span></span>";
+  div.appendChild(dots);
+
+  el("chat-window").appendChild(div);
+  el("chat-window").scrollTop = el("chat-window").scrollHeight;
+  return div;
 }
 
 // --- Structured visuals -----------------------------------------------
