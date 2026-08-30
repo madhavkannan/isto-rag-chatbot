@@ -338,32 +338,78 @@ Resources:
       UserAUsername: usera
       UserAPassword: !Ref TestUserAPassword
       UserARecord:
-        course_load_credits: 15
-        min_required_credits: 12
-        endorsement_expiry: "2027-06-30"
+        # Rule 1 (standing enrollment compliance): C_total >= M and
+        # C_inperson >= M-3. Kept separate from the itemized `courses`
+        # below, which only need to carry the two courses relevant to the
+        # travel/work-hour narratives, not an exhaustive schedule.
+        C_total: 15
+        C_inperson: 12
+        C_online: 3
+        M: 12
+        # Re-entry signature: expiry is computed (365 days from this date,
+        # 182 for OPT) rather than stored flat, per Rule 3.
+        travel_signature_date: "2026-06-15"
+        visa_status: F1
         work_hour_cap_weekly: 20
         hours_logged_this_week: 12
+        academic_calendar:
+          - start: "2026-10-05"
+            end: "2026-10-09"
+            label: Semester Break
         # Contact hours for THIS week specifically, not a flat per-credit
         # average — a fortnightly lab's hours aren't the same every week,
-        # and the weekly hour cap needs the real number to stay accurate.
+        # and both the weekly hour cap (Story 2) and the day-by-day
+        # attendance check (Story 1) need the real number to stay accurate.
         courses:
           - name: Microeconomics 201
             hours_this_week: 3
+            delivery_mode: online
           - name: Data Structures Lab
             hours_this_week: 3
+            delivery_mode: hybrid
+            meeting_days: [Tue, Thu]
+            # This week's Tuesday session is an async reading module — the
+            # Thursday session isn't flagged, so it still requires physical
+            # presence.
+            remote_session_dates: ["2026-10-13"]
       UserBUsername: userb
       UserBPassword: !Ref TestUserBPassword
       UserBRecord:
-        course_load_credits: 12
-        min_required_credits: 12
-        endorsement_expiry: "2026-01-15"
+        # At both minimums with zero buffer — technically compliant, no
+        # slack, fitting their "needs attention" character.
+        C_total: 12
+        C_inperson: 9
+        C_online: 3
+        M: 12
+        # Unchanged from before: already expired relative to any 2026
+        # travel, independent of the attendance check below.
+        travel_signature_date: "2025-01-15"
+        visa_status: F1
         work_hour_cap_weekly: 20
         hours_logged_this_week: 20
+        academic_calendar:
+          - start: "2026-10-05"
+            end: "2026-10-09"
+            label: Semester Break
         courses:
           - name: Organic Chemistry Lecture
             hours_this_week: 4
-          - name: Organic Chemistry Lab (fortnightly — meets this week)
+            delivery_mode: in_person
+            meeting_days: [Wed, Fri]
+          - name: Organic Chemistry Lab
             hours_this_week: 3
+            delivery_mode: hybrid
+            # Fortnightly — meets on specific dates rather than every week,
+            # so an explicit date list, not a weekly recurrence.
+            session_dates: ["2026-10-15"]
+          - name: Organic Chemistry Recitation
+            # 0 contact hours this week (not 0 in general) — this week's
+            # session is the flagged-remote one below, so there's nothing
+            # to count toward the work-hour cap for it this particular week.
+            hours_this_week: 0
+            delivery_mode: hybrid
+            meeting_days: [Tue]
+            remote_session_dates: ["2026-10-13"]
 
   # ---------------------------------------------------------------------
   # Custom resource: create the KB index and load synthetic policy docs

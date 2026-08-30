@@ -256,7 +256,7 @@ function appendTypingIndicator() {
 
 function renderVisual(visual) {
   if (visual.type === "work_hours") return renderHoursVisual(visual);
-  if (visual.type === "travel_coverage") return renderTravelVisual(visual);
+  if (visual.type === "trip_attendance") return renderTripAttendanceVisual(visual);
   return null;
 }
 
@@ -324,90 +324,107 @@ function makeHoursRow(kind, label, hours) {
   return row;
 }
 
-function renderTravelVisual(visual) {
-  const departure = new Date(`${visual.departure}T00:00:00Z`);
-  const returnDate = new Date(`${visual.return}T00:00:00Z`);
-  const expiry = new Date(`${visual.expiry}T00:00:00Z`);
-  // "today" comes from the server (the same source of truth the escalation
-  // decision uses), not the viewer's clock, so wording stays consistent
-  // regardless of who's looking at it or when.
-  const today = visual.today ? new Date(`${visual.today}T00:00:00Z`) : new Date();
-  const expiryIsPast = expiry < today;
-  const expiryVerb = expiryIsPast ? "expired" : "expires";
-  const expiryWhat = expiryIsPast ? "Expired" : "Expires";
-
-  const totalMs = returnDate - departure;
-  let splitPct;
-  if (totalMs <= 0) {
-    splitPct = expiry >= departure ? 100 : 0;
-  } else {
-    splitPct = Math.max(0, Math.min(100, ((expiry - departure) / totalMs) * 100));
-  }
-  const fullyCovered = splitPct >= 100;
-  const fullyUncovered = splitPct <= 0;
-
+function renderTripAttendanceVisual(visual) {
   const container = document.createElement("div");
-  container.className = "visual timeline-visual";
+  container.className = "visual trip-visual";
 
   const label = document.createElement("div");
   label.className = "visual-label";
-  label.textContent = "Trip coverage";
+  label.textContent = "Trip attendance check";
   container.appendChild(label);
 
-  const track = document.createElement("div");
-  track.className = "timeline-track";
-  if (fullyCovered) {
-    track.appendChild(makeTimelineSeg("safe", 0, 100));
-  } else if (fullyUncovered) {
-    track.appendChild(makeTimelineSeg("gap", 0, 100));
-  } else {
-    track.appendChild(makeTimelineSeg("safe", 0, splitPct));
-    track.appendChild(makeTimelineSeg("gap", splitPct, 100 - splitPct));
-    const tick = document.createElement("div");
-    tick.className = "timeline-tick";
-    tick.style.left = `${splitPct}%`;
-    track.appendChild(tick);
+  const strip = document.createElement("div");
+  strip.className = "calendar-strip";
+  for (const day of visual.days) {
+    strip.appendChild(makeDayChip(day));
   }
-  container.appendChild(track);
+  container.appendChild(strip);
 
-  const ticks = document.createElement("div");
-  ticks.className = "timeline-ticks";
-  ticks.appendChild(makeTickmark("start", 0, formatDate(visual.departure), "Depart"));
-  if (!fullyCovered && !fullyUncovered) {
-    const labelPct = Math.max(14, Math.min(86, splitPct));
-    ticks.appendChild(makeTickmark("mid warn", labelPct, formatDate(visual.expiry), expiryWhat));
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML =
+    '<span class="legend-item"><span class="legend-dot break-day"></span>Break</span>' +
+    '<span class="legend-item"><span class="legend-dot safe"></span>Safe</span>' +
+    '<span class="legend-item"><span class="legend-dot conflict"></span>Conflict</span>';
+  container.appendChild(legend);
+
+  const conflictDays = visual.days.filter((d) => d.status === "conflict");
+  if (conflictDays.length) {
+    const list = document.createElement("div");
+    list.className = "conflict-list";
+    for (const day of conflictDays) {
+      const row = document.createElement("div");
+      row.className = "conflict-row";
+      row.innerHTML = `<span class="date">${formatDate(day.date)}</span><span class="what">${escapeHtml(day.conflicts.join(", "))}</span>`;
+      list.appendChild(row);
+    }
+    container.appendChild(list);
   }
-  ticks.appendChild(makeTickmark("end", 100, formatDate(visual.return), "Return"));
-  container.appendChild(ticks);
 
   const caption = document.createElement("div");
-  caption.className = "visual-caption" + (fullyCovered ? "" : " warn");
-  if (fullyCovered) {
-    caption.textContent = `Endorsement valid through ${formatDate(visual.expiry)} — covers the whole trip`;
-  } else if (fullyUncovered) {
-    caption.textContent = `Endorsement ${expiryVerb} ${formatDate(visual.expiry)} — not valid for any of this trip`;
-  } else {
-    caption.textContent = `Covered through ${formatDate(visual.expiry)}, then a gap until your return`;
-  }
+  caption.className = "visual-caption" + (visual.compliant ? "" : " warn");
+  caption.textContent = buildTripCaption(visual);
   container.appendChild(caption);
+
+  if (visual.recommendedReturn) {
+    const rec = document.createElement("div");
+    rec.className = "recommendation";
+    rec.innerHTML =
+      '<div class="rec-label">Recommended compliant alternative</div>' +
+      `<div class="rec-text">Keep your ${formatDate(visual.departure)} departure, but return by ` +
+      `<strong>${formatDate(visual.recommendedReturn)}</strong> instead — every day through then is clear.</div>`;
+    container.appendChild(rec);
+  }
+
+  const sig = visual.signature;
+  const doc = document.createElement("div");
+  doc.className = "doc-status";
+  const sigOk = sig.status === "ok";
+  const sigText = sigOk
+    ? `Re-entry signature valid through ${formatDate(sig.expiry)}`
+    : sig.status === "expired"
+      ? `Re-entry signature expired ${formatDate(sig.expiry)} — a new case is needed either way`
+      : `Re-entry signature expires ${formatDate(sig.expiry)} (within 30 days) — a new case is recommended`;
+  doc.innerHTML = `<span class="doc-dot ${sigOk ? "ok" : "bad"}"></span>${escapeHtml(sigText)}`;
+  container.appendChild(doc);
 
   return container;
 }
 
-function makeTimelineSeg(kind, leftPct, widthPct) {
-  const seg = document.createElement("div");
-  seg.className = `timeline-seg ${kind}`;
-  seg.style.left = `${leftPct}%`;
-  seg.style.width = `${widthPct}%`;
-  return seg;
+function buildTripCaption(visual) {
+  const parts = [];
+  const breakDays = visual.days.filter((d) => d.status === "break");
+  if (breakDays.length) {
+    const label = breakDays[0].label;
+    const first = formatDate(breakDays[0].date);
+    const last = formatDate(breakDays[breakDays.length - 1].date);
+    parts.push(breakDays.length > 1 ? `${first}–${last} ${label}` : `${first} ${label}`);
+  }
+  for (const day of visual.days) {
+    if (day.status === "safe" && day.label) {
+      parts.push(`${formatDate(day.date)} ${day.label}`);
+    }
+  }
+  if (visual.compliant && visual.hardDeadline) {
+    parts.push(`back by ${formatDate(visual.hardDeadline)} for your next required session`);
+  } else if (!visual.compliant) {
+    const n = visual.days.filter((d) => d.status === "conflict").length;
+    parts.push(`${n} mandatory in-person session${n === 1 ? "" : "s"} conflict${n === 1 ? "s" : ""} with this trip`);
+  }
+  return parts.join(" · ");
 }
 
-function makeTickmark(kind, pct, dateText, whatText) {
-  const mark = document.createElement("div");
-  mark.className = `timeline-tickmark ${kind}`;
-  mark.style.left = `${pct}%`;
-  mark.innerHTML = `<span class="date">${dateText}</span><span class="what">${whatText}</span>`;
-  return mark;
+function makeDayChip(day) {
+  const chip = document.createElement("div");
+  const d = new Date(`${day.date}T00:00:00Z`);
+  const dow = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+  const dom = d.getUTCDate();
+  let cls = "day-chip";
+  if (day.status === "break") cls += " break-day";
+  if (day.status === "conflict") cls += " conflict";
+  chip.className = cls;
+  chip.innerHTML = `<span class="dow">${dow}</span><span class="dom">${dom}</span>`;
+  return chip;
 }
 
 function formatDate(iso) {

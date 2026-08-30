@@ -39,17 +39,16 @@ TOOL_SPECS = [
         "toolSpec": {
             "name": "get_student_record",
             "description": (
-                "Fetch the authenticated student's own SIS record: course "
-                "load credits, minimum required credits, re-entry "
-                "endorsement expiry, this week's course schedule (name and "
-                "contact hours per course), the combined weekly hour cap, "
-                "and work hours already logged this week. Always scoped to "
-                "the caller — it cannot be used to look up any other "
-                "student. Use this for anything that isn't a travel/"
-                "endorsement question (e.g. work-hour headroom, which "
-                "depends on both course hours and hours already worked); "
-                "for travel questions use check_travel_eligibility instead "
-                "once you have both dates."
+                "Fetch the authenticated student's own SIS record: total "
+                "enrolled credits, the minimum full-time credit threshold, "
+                "this week's course schedule (name and contact hours per "
+                "course), the combined weekly hour cap, and work hours "
+                "already logged this week. Always scoped to the caller — "
+                "it cannot be used to look up any other student. Use this "
+                "for anything that isn't a travel/endorsement question "
+                "(e.g. work-hour headroom, which depends on both course "
+                "hours and hours already worked); for travel questions use "
+                "check_travel_eligibility instead once you have both dates."
             ),
             "inputSchema": {
                 "json": {
@@ -124,31 +123,44 @@ def _fetch_record(student_id: str) -> dict:
     return record
 
 
+def _normalize_course(c: dict) -> dict:
+    # DynamoDB numbers come back as Decimal; cast to int for JSON. Schedule
+    # fields (delivery_mode/meeting_days/session_dates/remote_session_dates)
+    # only matter for the Story 1 travel tools below — Story 2 (work hours)
+    # only ever reads name/hours_this_week and ignores the rest.
+    return {
+        "name": c["name"],
+        "hours_this_week": int(c["hours_this_week"]),
+        "delivery_mode": c.get("delivery_mode"),
+        "meeting_days": list(c.get("meeting_days", [])),
+        "session_dates": list(c.get("session_dates", [])),
+        "remote_session_dates": list(c.get("remote_session_dates", [])),
+    }
+
+
 def execute_get_student_record(student_id: str, _tool_input: dict) -> dict:
     record = _fetch_record(student_id)
     return {
-        "course_load_credits": int(record["course_load_credits"]),
-        "min_required_credits": int(record["min_required_credits"]),
-        "endorsement_expiry": record["endorsement_expiry"],
+        "C_total": int(record["C_total"]),
+        "M": int(record["M"]),
         "work_hour_cap_weekly": int(record["work_hour_cap_weekly"]),
         "hours_logged_this_week": int(record["hours_logged_this_week"]),
-        # Each course's actual contact hours for the current week, not a
-        # flat credit-based average — see escalation.py's summarize_record
-        # for why that distinction matters (fortnightly classes, etc.).
-        # DynamoDB numbers come back as Decimal; cast to int for JSON.
-        "courses": [
-            {"name": c["name"], "hours_this_week": int(c["hours_this_week"])}
-            for c in record.get("courses", [])
-        ],
+        "courses": [_normalize_course(c) for c in record.get("courses", [])],
     }
 
 
 def execute_check_travel_eligibility(student_id: str, tool_input: dict) -> dict:
     record = _fetch_record(student_id)
     return {
-        "course_load_credits": int(record["course_load_credits"]),
-        "min_required_credits": int(record["min_required_credits"]),
-        "endorsement_expiry": record["endorsement_expiry"],
+        "C_total": int(record["C_total"]),
+        "C_inperson": int(record["C_inperson"]),
+        "C_online": int(record["C_online"]),
+        "M": int(record["M"]),
+        "travel_signature_date": record["travel_signature_date"],
+        "visa_status": record.get("visa_status", "F1"),
+        "courses": [_normalize_course(c) for c in record.get("courses", [])],
+        "assignments": list(record.get("assignments", [])),
+        "academic_calendar": [dict(b) for b in record.get("academic_calendar", [])],
         # Guaranteed present: the schema's "required" makes this the only
         # way the model can reach this function at all.
         "travel_departure_date": tool_input["travel_departure_date"],
@@ -161,5 +173,6 @@ def execute_confirm_escalation(student_id: str, tool_input: dict) -> dict:
     # re-derives the record and re-evaluates from scratch rather than
     # trusting that whatever the model saw earlier in the conversation is
     # still accurate, so it's safe to call even if a confirmation arrives
-    # out of order.
+    # out of order, or with different (e.g. shortened) dates than the
+    # original check.
     return execute_check_travel_eligibility(student_id, tool_input)

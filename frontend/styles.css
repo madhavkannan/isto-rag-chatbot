@@ -454,96 +454,161 @@ button:active {
   color: white;
 }
 
-/* Travel-coverage timeline: not a bounded quantity like the hours meter, so
-   this is a date-range bar instead — the fill shows how much of the trip
-   (departure -> return) falls before the endorsement expires. */
-.timeline-visual .visual-label {
-  margin-bottom: 18px;
+/* Trip attendance calendar: a day-per-chip strip rather than a proportional
+   range bar, since Rule 2 is a genuine day-by-day check, not a single
+   before/after split point. */
+.calendar-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
 }
 
-.timeline-track {
-  position: relative;
-  height: 8px;
-  margin: 0 3px;
-}
-
-.timeline-seg {
-  position: absolute;
-  top: 0;
-  height: 100%;
-}
-
-.timeline-seg.safe {
-  background: var(--accent);
-}
-
-.timeline-seg.gap {
-  background: var(--escalated-border);
-}
-
-.timeline-seg.safe:first-child {
-  border-radius: 999px 0 0 999px;
-}
-
-.timeline-seg.gap:last-child {
-  border-radius: 0 999px 999px 0;
-}
-
-.timeline-seg.safe:only-child,
-.timeline-seg.gap:only-child {
-  border-radius: 999px;
-}
-
-.timeline-tick {
-  position: absolute;
-  top: 0;
-  width: 2px;
-  height: 100%;
-  background: rgba(48, 46, 45, 0.3);
-}
-
-.timeline-ticks {
-  position: relative;
-  height: 48px;
-  margin: 0 3px;
-}
-
-.timeline-tickmark {
-  position: absolute;
-  top: 16px;
-  transform: translateX(-50%);
+.day-chip {
+  width: 38px;
+  padding: 5px 0 6px;
+  border-radius: 9px;
   text-align: center;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
+  background: rgba(47, 93, 58, 0.1);
+  border: 1px solid rgba(47, 93, 58, 0.18);
 }
 
-.timeline-tickmark.start {
-  transform: translateX(0);
-  text-align: left;
+.day-chip.conflict {
+  background: rgba(182, 113, 47, 0.14);
+  border-color: rgba(182, 113, 47, 0.35);
 }
 
-.timeline-tickmark.end {
-  transform: translateX(-100%);
-  text-align: right;
+.day-chip.break-day {
+  background: rgba(47, 93, 58, 0.06);
+  border-style: dashed;
 }
 
-.timeline-tickmark .date {
+.day-chip .dow {
   display: block;
-}
-
-.timeline-tickmark .what {
-  display: block;
-  margin-top: 4px;
-  font-size: 9.5px;
-  font-weight: 600;
+  font-size: 8.5px;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+  color: #5d7a63;
+}
+
+.day-chip.conflict .dow {
+  color: #a3702f;
+}
+
+.day-chip .dom {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-hover);
+  margin-top: 1px;
+}
+
+.day-chip.conflict .dom {
+  color: var(--escalated-text);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
-.timeline-tickmark.warn .what {
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.legend-dot.safe {
+  background: var(--accent);
+}
+
+.legend-dot.conflict {
+  background: var(--escalated-border);
+}
+
+.legend-dot.break-day {
+  background: transparent;
+  border: 1px dashed #5d7a63;
+}
+
+.conflict-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.conflict-row {
+  display: flex;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.conflict-row .date {
+  font-weight: 600;
   color: var(--escalated-text);
+  min-width: 46px;
+  flex-shrink: 0;
+}
+
+.recommendation {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(47, 93, 58, 0.25);
+}
+
+.recommendation .rec-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-hover);
+  margin-bottom: 3px;
+}
+
+.recommendation .rec-text {
+  font-size: 12.5px;
+}
+
+.recommendation .rec-text strong {
+  color: var(--accent-hover);
+}
+
+.doc-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(48, 46, 45, 0.08);
+  font-size: 12.5px;
+}
+
+.doc-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.doc-dot.ok {
+  background: var(--accent);
+}
+
+.doc-dot.bad {
+  background: var(--escalated-border);
 }
 
 #starter-prompts {
