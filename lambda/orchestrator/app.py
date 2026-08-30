@@ -90,7 +90,7 @@ def _resolve_student_id(event) -> str:
 
 def _run_conversation(student_id: str, message: str, history: list[dict]) -> tuple[str, bool, dict | None]:
     policy_chunks = kb_retrieval.search_policy_chunks(message)
-    system_prompt = build_system_prompt(policy_chunks)
+    system_prompt = build_system_prompt(policy_chunks, _today_iso())
 
     messages = list(history) + [{"role": "user", "content": [{"text": message}]}]
 
@@ -98,8 +98,12 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
     escalated = False
     visual = None
 
-    # Tool-calling loop — bounded, since a single well-scoped tool can only
-    # meaningfully be called once per turn in this demo.
+    # Tool-calling loop — bounded. Claude's parallel tool use is on by
+    # default, so a single turn can carry more than one toolUse block (e.g.
+    # "use these dates AND file the case" is enough for the model to want
+    # to re-check and confirm in one breath) — every toolUse in the
+    # message needs a matching toolResult in the very next message, or the
+    # next request is rejected outright.
     for _ in range(3):
         stop_reason = response["stopReason"]
         assistant_message = response["output"]["message"]
@@ -108,25 +112,25 @@ def _run_conversation(student_id: str, message: str, history: list[dict]) -> tup
         if stop_reason != "tool_use":
             break
 
-        tool_use = next(b["toolUse"] for b in assistant_message["content"] if "toolUse" in b)
-        tool_result_content, tool_escalated, visual = _execute_tool(student_id, tool_use["name"], tool_use["input"])
-        if tool_escalated:
-            escalated = True
-
-        messages.append(
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "toolResult": {
-                            "toolUseId": tool_use["toolUseId"],
-                            "content": [{"json": tool_result_content}],
-                        }
+        tool_uses = [b["toolUse"] for b in assistant_message["content"] if "toolUse" in b]
+        result_blocks = []
+        for tool_use in tool_uses:
+            tool_result_content, tool_escalated, tool_visual = _execute_tool(
+                student_id, tool_use["name"], tool_use["input"]
+            )
+            if tool_escalated:
+                escalated = True
+            visual = tool_visual  # if more than one, the last (most final) tool's visual wins
+            result_blocks.append(
+                {
+                    "toolResult": {
+                        "toolUseId": tool_use["toolUseId"],
+                        "content": [{"json": tool_result_content}],
                     }
-                ],
-            }
-        )
+                }
+            )
 
+        messages.append({"role": "user", "content": result_blocks})
         response = openai_client.converse(messages, system_prompt, tools=TOOL_SPECS)
 
     final_text = "".join(b.get("text", "") for b in response["output"]["message"]["content"])
@@ -145,13 +149,20 @@ def _expiry_status_phrase(expiry: str, today: str) -> str:
     return f"already expired on {expiry}" if expiry < today else f"will expire on {expiry}"
 
 
-def _travel_visual(record: dict) -> dict:
+def _days_as_dicts(days: list) -> list[dict]:
+    return [{"date": d.iso_date, "status": d.status, "label": d.label, "conflicts": d.conflicts} for d in days]
+
+
+def _trip_visual(departure: str, return_date: str, evaluation: "escalation.TravelEvaluation") -> dict:
     return {
-        "type": "travel_coverage",
-        "departure": record["travel_departure_date"],
-        "return": record["travel_return_date"],
-        "expiry": record["endorsement_expiry"],
-        "today": _today_iso(),
+        "type": "trip_attendance",
+        "departure": departure,
+        "return": return_date,
+        "days": _days_as_dicts(evaluation.attendance.days),
+        "compliant": evaluation.attendance.compliant,
+        "recommendedReturn": evaluation.attendance.recommended_return_date,
+        "hardDeadline": evaluation.attendance.hard_deadline,
+        "signature": {"status": evaluation.signature.status, "expiry": evaluation.signature.expiry},
     }
 
 
@@ -206,53 +217,129 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
 
     if name == "check_travel_eligibility":
         record = execute_check_travel_eligibility(student_id, tool_input)
-        evaluation = escalation.evaluate_travel(record)
+        departure = tool_input["travel_departure_date"]
+        return_date = tool_input["travel_return_date"]
+        evaluation = escalation.evaluate_travel(record, departure, return_date)
         today = _today_iso()
+        signature_phrase = _expiry_status_phrase(evaluation.signature.expiry, today)
+
         tool_result = {
-            **record,
-            "course_load_meets_minimum": evaluation.course_load_meets_minimum,
-            "today": today,
-            "endorsement_status_phrase": _expiry_status_phrase(record["endorsement_expiry"], today),
+            "travel_departure_date": departure,
+            "travel_return_date": return_date,
+            "days": _days_as_dicts(evaluation.attendance.days),
+            "attendance_compliant": evaluation.attendance.compliant,
+            "recommended_return_date": evaluation.attendance.recommended_return_date,
+            "hard_deadline": evaluation.attendance.hard_deadline,
+            "signature_status": evaluation.signature.status,
+            "signature_expiry": evaluation.signature.expiry,
+            "signature_status_phrase": signature_phrase,
+            "enrollment_compliant": evaluation.enrollment.compliant,
         }
-        if evaluation.escalate:
-            tool_result["instruction"] = (
-                "This trip is NOT fully covered by the student's re-entry "
-                "endorsement. Do not escalate yet, and do not call "
-                "confirm_escalation on your own initiative. Explain the gap "
-                "to the student in plain terms using the actual dates, and "
-                "ask directly whether they'd like you to file this with "
-                "ISTO. Only call confirm_escalation after they clearly say "
-                "yes."
+
+        instructions = []
+        if evaluation.attendance.compliant:
+            instructions.append(
+                "Attendance is fully compliant. Confirm the trip works, briefly "
+                "explain why using the break/remote-session reasons in `days` "
+                "(entries with status 'break' or a 'label' explaining why a day "
+                "is safe), and if hard_deadline is set, state that exact date as "
+                "when they must be back for a required in-person session."
             )
-        return tool_result, False, _travel_visual(record)
+        else:
+            instructions.append(
+                "Attendance is NOT compliant — do not escalate yet and do not "
+                "call confirm_escalation on your own initiative. List the "
+                "specific conflicting dates and course/assignment names from "
+                "`days` (entries with status 'conflict'), and also call out any "
+                "days that are safe because of a flagged remote session, the "
+                "same way you would for a compliant trip."
+            )
+            if evaluation.attendance.recommended_return_date:
+                instructions.append(
+                    f"Mention the recommended compliant alternative: same "
+                    f"departure date, return by "
+                    f"{evaluation.attendance.recommended_return_date} instead."
+                )
+
+        if evaluation.signature.status != "ok":
+            instructions.append(
+                f"Re-entry signature status: {signature_phrase}. This needs an "
+                "ISTO case regardless of which return date the student "
+                "ultimately picks — say so explicitly, separately from the "
+                "attendance question."
+            )
+
+        if evaluation.needs_escalation:
+            if not evaluation.attendance.compliant and evaluation.signature.status != "ok":
+                instructions.append(
+                    "Both problems need ISTO, but as ONE case, not two. Ask the "
+                    "student to choose: (a) take the recommended compliant "
+                    "dates, so the case is just a signature renewal, or (b) "
+                    "keep their original requested dates, so the same case "
+                    "must also request an exception for the attendance "
+                    "conflict — make clear that exception is ISTO's call, not "
+                    "guaranteed. Wait for their choice, then call "
+                    "confirm_escalation with whichever dates they settle on."
+                )
+            else:
+                instructions.append(
+                    "Ask directly whether they'd like this filed with ISTO. "
+                    "Only call confirm_escalation after they clearly say yes, "
+                    "using whichever dates they confirm."
+                )
+        if not evaluation.enrollment.compliant:
+            instructions.append(
+                "Separately, enrollment_compliant is false — flag this as a "
+                "standing compliance issue independent of this trip."
+            )
+        tool_result["instruction"] = " ".join(instructions)
+
+        return tool_result, False, _trip_visual(departure, return_date, evaluation)
 
     if name == "confirm_escalation":
         record = execute_confirm_escalation(student_id, tool_input)
-        evaluation = escalation.evaluate_travel(record)
+        departure = tool_input["travel_departure_date"]
+        return_date = tool_input["travel_return_date"]
+        evaluation = escalation.evaluate_travel(record, departure, return_date)
         today = _today_iso()
+        signature_phrase = _expiry_status_phrase(evaluation.signature.expiry, today)
+
         tool_result = {
-            **record,
-            "course_load_meets_minimum": evaluation.course_load_meets_minimum,
-            "today": today,
-            "endorsement_status_phrase": _expiry_status_phrase(record["endorsement_expiry"], today),
+            "travel_departure_date": departure,
+            "travel_return_date": return_date,
+            "days": _days_as_dicts(evaluation.attendance.days),
+            "attendance_compliant": evaluation.attendance.compliant,
+            "signature_status": evaluation.signature.status,
+            "signature_expiry": evaluation.signature.expiry,
+            "signature_status_phrase": signature_phrase,
         }
-        if evaluation.escalate:
+
+        if evaluation.needs_escalation:
+            reasons = []
+            if evaluation.signature.status != "ok":
+                reasons.append(f"re-entry signature ({signature_phrase})")
+            if not evaluation.attendance.compliant:
+                conflicts = "; ".join(
+                    f"{d.iso_date} ({', '.join(d.conflicts)})" for d in evaluation.attendance.conflict_dates
+                )
+                reasons.append(f"attendance exception needed for: {conflicts}")
             tool_result["instruction"] = (
-                "This case is now escalated to ISTO. Tell the student that "
-                "plainly, then include a short case summary addressed to an "
-                "ISTO advisor covering: the endorsement expiry date, the "
-                "planned travel dates, and that course load meets the "
-                "minimum so re-issuance is likely (ISTO's job here is "
-                "confirmation, not investigation)."
+                "This case is now filed with ISTO — ONE case covering: "
+                + "; and ".join(reasons)
+                + ". Tell the student plainly, then draft a short case summary "
+                "addressed to an ISTO advisor covering every reason listed "
+                "above. If an attendance exception is part of it, be clear "
+                "that ISTO decides whether to grant it, not this assistant."
             )
-        else:
-            # Re-check came back clean (e.g. the dates changed since the
-            # student first asked) — nothing to file after all.
-            tool_result["instruction"] = (
-                "On re-check, this trip is actually fully covered — let the "
-                "student know no escalation is needed after all."
-            )
-        return tool_result, evaluation.escalate, _travel_visual(record)
+            return tool_result, True, _trip_visual(departure, return_date, evaluation)
+
+        # Re-check came back clean (e.g. the dates changed since the student
+        # first asked) — nothing to file after all.
+        tool_result["instruction"] = (
+            "On re-check, this trip is fully compliant and the signature is "
+            "valid — let the student know no case is needed after all."
+        )
+        return tool_result, False, _trip_visual(departure, return_date, evaluation)
 
     raise ValueError(f"unknown tool: {name}")
 
