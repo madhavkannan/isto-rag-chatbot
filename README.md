@@ -107,15 +107,35 @@ frontend needs them.
 
 ## Run the frontend
 
+**Locally:**
+
 ```bash
 cp frontend/config.sample.js frontend/config.js
 # edit frontend/config.js with the stack outputs
 python3 -m http.server 8080 --directory frontend
 ```
 
-Open `http://localhost:8080`, sign in as Test User A or B (passwords are
-whatever you set for `TestUserAPassword`/`TestUserBPassword`, or the demo
-defaults above), and chat.
+**Hosted (public URL):** the stack also stands up a private S3 bucket
+behind a CloudFront distribution (Origin Access Control — no public
+bucket, no S3 website endpoint). CloudFormation doesn't upload arbitrary
+local files, so after `sam deploy`, sync the content and generate
+`config.js` from the stack's own outputs with:
+
+```bash
+scripts/deploy_frontend.sh isto-demo us-east-1
+```
+
+This prints the CloudFront URL (`FrontendUrl` in the stack outputs). First
+deploy: CloudFront distributions take a few minutes to fully propagate
+globally — if the URL 403s or serves stale content right after creation,
+give it a few minutes and retry. Re-run the script any time you change
+`frontend/` or redeploy the stack (it also invalidates the CloudFront
+cache, so changes show up immediately rather than waiting for the default
+TTL to expire).
+
+Either way, sign in as Test User A or B (passwords are whatever you set
+for `TestUserAPassword`/`TestUserBPassword`, or the demo defaults above),
+and chat.
 
 ## Demo stories
 

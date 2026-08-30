@@ -397,6 +397,70 @@ Resources:
       CollectionEndpoint: !Sub https://${KbDomain.DomainEndpoint}
       IndexName: !Sub isto-kb-${Stage}
 
+  # ---------------------------------------------------------------------
+  # Frontend hosting: private S3 bucket behind CloudFront (Origin Access
+  # Control — no public bucket, no S3 static-website endpoint). Content
+  # itself isn't uploaded by CloudFormation; run scripts/deploy_frontend.sh
+  # after `sam deploy` to sync the frontend/ folder and generate config.js
+  # from this stack's own outputs.
+  # ---------------------------------------------------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub isto-demo-frontend-${Stage}-${AWS::AccountId}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub isto-demo-frontend-oac-${Stage}
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        PriceClass: PriceClass_100
+        Origins:
+          - Id: FrontendBucketOrigin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendBucketOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          # Managed-CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
+
 Outputs:
   ApiUrl:
     Description: Base URL for the chat API — POST {ApiUrl}/chat
@@ -411,3 +475,8 @@ Outputs:
     Value: userb
   Region:
     Value: !Ref AWS::Region
+  FrontendBucketName:
+    Value: !Ref FrontendBucket
+  FrontendUrl:
+    Description: Public HTTPS URL for the hosted frontend (run scripts/deploy_frontend.sh first)
+    Value: !Sub https://${FrontendDistribution.DomainName}
