@@ -290,12 +290,35 @@ function makeCoursePill(course) {
   pill.innerHTML =
     `<span class="course-pill-name">${escapeHtml(course.name)}</span>` +
     `<span class="course-pill-meta">${credits} cr · ${modeLabel}</span>`;
-  pill.addEventListener("click", () => {
-    const input = el("message-input");
-    if (input.disabled) return;
-    input.value = `I want to drop ${course.name}`;
-    el("composer").requestSubmit();
-  });
+  pill.addEventListener("click", () => sendQuickMessage(`I want to drop ${course.name}`));
+  return pill;
+}
+
+function sendQuickMessage(text) {
+  const input = el("message-input");
+  if (input.disabled) return;
+  input.value = text;
+  el("composer").requestSubmit();
+}
+
+function makeAltPill(alt) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "course-pill";
+  const modeLabel = alt.delivery_mode === "in_person" ? "In-person" : alt.delivery_mode === "hybrid" ? "Hybrid" : "Online";
+  pill.innerHTML =
+    `<span class="course-pill-name">${escapeHtml(alt.name)}</span>` +
+    `<span class="course-pill-meta">${alt.credits} cr · ${modeLabel}</span>`;
+  pill.addEventListener("click", () => sendQuickMessage(`I'd like to swap into ${alt.name} instead.`));
+  return pill;
+}
+
+function makeDeclinePill(text) {
+  const pill = document.createElement("button");
+  pill.type = "button";
+  pill.className = "course-pill decline-pill";
+  pill.textContent = text;
+  pill.addEventListener("click", () => sendQuickMessage(text));
   return pill;
 }
 
@@ -326,20 +349,30 @@ function renderCourseDropVisual(visual) {
     : "Falls below the minimum on at least one count — not compliant on its own.";
   container.appendChild(caption);
 
-  if (!visual.compliant && visual.alternatives && visual.alternatives.length) {
+  if (!visual.compliant) {
     const list = document.createElement("div");
     list.className = "alt-list";
+    const hasAlternatives = visual.alternatives && visual.alternatives.length;
+
     const altLabel = document.createElement("div");
     altLabel.className = "alt-list-label";
-    altLabel.textContent = "Suggested alternatives";
+    altLabel.textContent = hasAlternatives ? "Suggested alternatives" : "No substitute course on record";
     list.appendChild(altLabel);
-    for (const alt of visual.alternatives) {
-      const row = document.createElement("div");
-      row.className = "alt-row";
-      const modeLabel = alt.delivery_mode === "in_person" ? "in-person" : alt.delivery_mode;
-      row.textContent = `${alt.name} — ${modeLabel}, ${alt.credits}cr`;
-      list.appendChild(row);
+
+    const pillList = document.createElement("div");
+    pillList.className = "course-pill-list";
+    if (hasAlternatives) {
+      for (const alt of visual.alternatives) {
+        pillList.appendChild(makeAltPill(alt));
+      }
     }
+    pillList.appendChild(
+      makeDeclinePill(
+        hasAlternatives ? "I can't take any of these — drop it anyway" : "I want to drop it anyway"
+      )
+    );
+    list.appendChild(pillList);
+
     container.appendChild(list);
   }
 
