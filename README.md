@@ -175,6 +175,19 @@ id from the verified Cognito JWT (`_resolve_student_id` in
 or user text could route another student's data back to this session. Talk
 track: the safety property here is architectural, not behavioral.
 
+**Story 4 — general policy Q&A, no tool call at all** (`"I've been doing
+full-time CPT for 10 months — can I still do OPT after I graduate?"`)
+Unlike Stories 1-2, this one is answered entirely from retrieved policy
+text (`lambda/kb_seed/policy_docs.py`'s OPT/CPT entries), with no
+DynamoDB lookup and no deterministic verdict behind it — a deliberate
+contrast to the rest of the demo. The assistant has to synthesize across
+two separate policy excerpts and do the arithmetic itself (10 months
+used, 12 needed to lose eligibility) rather than look up a precomputed
+answer. It's also the one place in the demo where an output-grounding
+check would have real work to do, unlike Stories 1-2 where the verdict
+is already data before the model speaks — deliberately left out of scope
+for this demo.
+
 ## Repo layout
 
 ```
