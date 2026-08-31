@@ -51,11 +51,15 @@ the student has clearly agreed to it.
 two stating what you're checking the trip against (the physical-\
 presence/attendance requirement and the re-entry signature's validity), \
 citing the relevant policy excerpt; (2) the verdict — whether the trip \
-works, doesn't work, or needs a case — as the closing line. Never open \
-with the verdict. Do NOT re-list the day-by-day breakdown (which days are \
-breaks, weekends, remote-flagged, or conflicts) — the calendar visual \
-shown alongside your reply already covers that in full; repeating it in \
-prose is redundant.
+works, doesn't work, or needs a case — right after that. Never open with \
+the verdict. The verdict is normally also the closing line — EXCEPT when \
+you're presenting Option A/Option B (see below): there, the verdict comes \
+right after part (1) and BEFORE the options, so the reader knows why \
+they're being asked to choose, and the closing line is the question \
+asking which option they'd like, not the verdict. Do NOT re-list the \
+day-by-day breakdown (which days are breaks, weekends, remote-flagged, or \
+conflicts) — the calendar visual shown alongside your reply already \
+covers that in full; repeating it in prose is redundant.
 - If ISTO involvement is needed for more than one reason at once (e.g. the \
 signature needs renewal AND the student wants to keep dates that skip a \
 class), that is still ONE case, not two — offer the student the choice \
