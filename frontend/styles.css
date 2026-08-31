@@ -471,15 +471,6 @@ button:active {
   margin-bottom: 6px;
 }
 
-.alt-row {
-  font-size: 12.5px;
-  margin-bottom: 3px;
-}
-
-.alt-row:last-child {
-  margin-bottom: 0;
-}
-
 /* RCL escalation ticket card */
 .ticket-rows {
   display: flex;
@@ -599,6 +590,18 @@ button:active {
   color: var(--text-muted);
   flex-shrink: 0;
   margin-left: 12px;
+}
+
+.decline-pill {
+  justify-content: center;
+  border-style: dashed;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.decline-pill:hover {
+  border-color: var(--escalated-border);
+  color: var(--escalated-text);
 }
 
 /* Trip attendance calendar: a day-per-chip strip rather than a proportional

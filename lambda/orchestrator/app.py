@@ -408,20 +408,45 @@ def _execute_tool(student_id: str, name: str, tool_input: dict) -> tuple[dict, b
                 "is needed here."
             )
         else:
-            tool_result["instruction"] = (
+            base = (
                 "Lead with the relevant policy facts as bullets (the "
                 "minimum total credit requirement and the physical-"
                 "presence minimum), then the specific before/after numbers "
                 "for both counts as bullets — call out which one(s) fail. "
                 "Only after that, close with one line stating this drop "
-                "is not compliant on its own. If `alternative_courses` is "
-                "non-empty, name them as options the student could swap "
-                "into instead, and ask if they'd like to. Do not mention "
-                "Reduced Course Load (RCL) or file_rcl_escalation yet "
-                "unless the student says they can't take any of the "
-                "alternatives — wait for that before explaining the RCL "
-                "path."
+                "is not compliant on its own, then explicitly flag that "
+                "they should reconsider — either keep this course, or "
+                "swap into an alternative."
             )
+            if evaluation.alternatives:
+                base += (
+                    " `alternative_courses` is non-empty — name those real "
+                    "options and ask directly whether they'd like to swap "
+                    "into one instead of dropping outright."
+                )
+            else:
+                base += (
+                    " `alternative_courses` is empty for this specific "
+                    "course — say plainly that there's no substitute on "
+                    "record for it, and ask whether they'd like to "
+                    "reconsider dropping a different course instead. Do "
+                    "NOT invent an alternative that isn't in the data."
+                )
+            base += (
+                " Do not mention Reduced Course Load (RCL) or "
+                "file_rcl_escalation in THIS reply — only bring that up "
+                "once the student responds indicating they can't or won't "
+                "take an alternative (a stated reason, 'I want to drop it "
+                "anyway', declining, or anything similar). When that "
+                "happens, in your very next reply — without repeating "
+                "these credit numbers again and without calling "
+                "check_course_drop_impact again — explain that a Medical "
+                "Reduced Course Load (RCL) exemption from a human advisor "
+                "is the only legal way to drop below the minimum while "
+                "keeping their visa status intact, and ask if they'd like "
+                "you to file an urgent escalation."
+            )
+            tool_result["instruction"] = base
 
         return tool_result, False, _course_drop_visual(evaluation)
 
