@@ -61,35 +61,36 @@ POLICY_CHUNKS = [
         ),
     },
     {
-        "id": "opt-1",
-        "doc": "Optional Practical Training (OPT)",
+        "id": "work-auth-1",
+        "doc": "Full-Time Work Authorization",
         "text": (
-            "Optional Practical Training (OPT): F-1 students may apply for "
-            "OPT, temporary employment authorization directly related to "
-            "their field of study. Standard OPT provides up to 12 months of "
-            "authorization total per degree level, usable before or after "
-            "completing the program — any pre-completion OPT used counts "
-            "against that same 12-month total. Students with a STEM-"
-            "designated degree may apply for a one-time 24-month extension. "
-            "Accumulating 12 months or more of full-time Curricular Practical "
-            "Training (CPT) at a given degree level eliminates OPT eligibility "
+            "Full-Time Work Authorization: International students may apply "
+            "for temporary full-time work authorization directly related to "
+            "their field of study, for up to 12 months total per degree "
+            "level, usable before or after completing the program — any "
+            "authorization used before completion counts against that same "
+            "12-month total. Students in certain technical or science degree "
+            "programs may qualify for an extension. Accumulating 12 months "
+            "or more of full-time internship authorization at a given degree "
+            "level eliminates eligibility for full-time work authorization "
             "for that degree entirely."
         ),
     },
     {
-        "id": "cpt-1",
-        "doc": "Curricular Practical Training (CPT)",
+        "id": "internship-auth-1",
+        "doc": "Internship Authorization",
         "text": (
-            "Curricular Practical Training (CPT): F-1 students may apply for "
-            "CPT, employment authorization integrated directly into the "
-            "academic curriculum (for example, a required internship or "
-            "co-op tied to a specific course), usable only while actively "
-            "enrolled. CPT itself has no fixed total time limit, but "
-            "accumulating 12 months or more of full-time CPT (more than 20 "
-            "hours per week) at a given degree level eliminates that "
-            "student's eligibility for OPT at the same degree level. "
-            "Part-time CPT (20 hours per week or less) does not count "
-            "toward this 12-month threshold."
+            "Internship Authorization: International students may apply for "
+            "internship authorization — employment integrated directly into "
+            "the academic curriculum, such as a required internship or "
+            "co-op tied to a specific course — usable only while actively "
+            "enrolled. Internship authorization itself has no fixed total "
+            "time limit, but accumulating 12 months or more of full-time "
+            "internship authorization (more than 20 hours per week) at a "
+            "given degree level eliminates that student's eligibility for "
+            "full-time work authorization at the same degree level. "
+            "Part-time internship authorization (20 hours per week or less) "
+            "does not count toward this 12-month threshold."
         ),
     },
 ]
