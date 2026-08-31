@@ -4,11 +4,12 @@ prompt-injection / impersonation attempts, independent of model behavior.
 
 This is intentionally a blunt heuristic, not the security boundary — it just
 lets the demo show an instant, deterministic refusal instead of depending on
-the model to behave correctly on any given take. Bedrock Guardrails (attached
-to the Converse call itself) is layer 2. The system prompt is layer 3. The
-tool schema having no student-id parameter (see tools.py) is layer 4 and the
-only one that is actually load-bearing: even if layers 1-3 all failed, there
-is no code path that lets this session read another student's record.
+the model to behave correctly on any given take. FALLBACK BRANCH: there is no
+Bedrock Guardrails layer here (chat goes straight to the OpenAI Platform API
+— see openai_client.py). The system prompt is layer 2. The tool schema having
+no student-id parameter (see tools.py) is layer 3 and the only one that is
+actually load-bearing: even if layers 1-2 both failed, there is no code path
+that lets this session read another student's record.
 """
 import re
 
