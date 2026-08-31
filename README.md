@@ -164,6 +164,19 @@ status."*
   User B's data to User A's session — see [How a request flows through
   the system](#how-a-request-flows-through-the-system) below for why.
 
+**4. General policy Q&A — no tool call at all** — ask *"I've been doing
+full-time CPT for 10 months — can I still do OPT after I graduate?"*
+- Unlike Stories 1-3, this one is answered entirely from retrieved policy
+  text, with no DynamoDB lookup and no deterministic verdict behind it —
+  a deliberate contrast to the rest of the demo. The assistant has to
+  synthesize across two separate policy excerpts (OPT's rules, and CPT's
+  12-month threshold) and do the arithmetic itself (10 months used, 12
+  needed to lose eligibility) rather than look up a precomputed answer.
+  This is also the one place in the demo where an output-grounding check
+  would have real work to do, unlike Stories 1-2 (which have nothing to
+  validate — the verdict is already data by the time the model speaks) —
+  deliberately left out of scope for this demo.
+
 ## How a request flows through the system
 
 ```mermaid
